@@ -3,6 +3,82 @@
 
 ---
 
+## ✅ PROGRESS TRACKER
+
+Use this as a handoff checklist. Check off items as they are completed.
+
+### Phase 1 — Bug Fixes in `main.py`
+- [x] **1.1** Strip `<think>` blocks in `_extract_tool_call()`, try multiple patterns, inject reminder after 2 consecutive failures
+- [x] **1.2** Change Ollama timeout to 300 s for `tailor_resume`; add `OLLAMA_TIMEOUT` constant; add `--timeout` CLI flag
+- [x] **1.3** Update `jobs_dataset.csv` to comma-separated skills; fix `filtering_tool` to use `.split(",")`
+- [x] **1.4** Add state machine `{"filtered", "ranked", "tailored"}` — block `finish` until all three are True
+- [x] **1.5** Cascade JSON parser in `resume_tailoring_tool`: strip fences → `json.loads` → regex → line-by-line
+- [x] **1.6** Add `--dry-run` CLI flag (filter + rank, no LLM calls)
+- [x] **Bonus** Added `from __future__ import annotations` for Python 3.9 compatibility
+
+### Phase 2 — Unit Tests (`tests/test_agent.py`)
+- [x] Test 1 — `filtering_tool`: remote-only filter
+- [x] Test 2 — `filtering_tool`: experience cap (≤ candidate_years + 1)
+- [x] Test 3 — `filtering_tool`: company exclusion
+- [x] Test 4 — `filtering_tool`: skill overlap
+- [x] Test 5 — `ranking_tool`: all scores 0–100
+- [x] Test 6 — `ranking_tool`: first job has highest score
+- [x] Test 7 — `ranking_tool`: skill score proportional
+- [x] Test 8 — `ranking_tool`: `top_3` has ≤ 3 items
+- [x] Test 9 — Dataset integrity: 25 rows, 7 columns, valid years, no empty fields
+- [x] Test 10 — State machine: `finish` blocked when `tailored=False`
+- [x] **Bonus Test 11** — State machine: `finish` accepted after all 3 steps done
+- [x] **All 11 tests pass** (`pytest tests/test_agent.py -v`)
+
+### Phase 3 — FastAPI Backend (`api_server.py`)
+- [x] `GET /health` — Ollama connectivity check
+- [x] `GET /jobs` — return all 25 jobs as JSON
+- [x] `POST /run-agent` — SSE streaming: status → filter → rank → tailor → complete
+- [x] `POST /parse-resume` — PDF upload → extract summary + bullets (pdfplumber / pypdf fallback)
+- [x] `POST /export-resume` — rebuild 1-page PDF with tailored sections (reportlab)
+- [x] CORS open (`allow_origins=["*"]`)
+
+### Phase 4 — Frontend (`frontend/index.html`)
+- [x] Hero header: animated hexagon logo, Ollama status dot (calls `/health` on load)
+- [x] Candidate form: tag-chip skills input, location, years, remote toggle, exclusions
+- [x] Resume upload: drag-drop PDF zone → auto-calls `/parse-resume` → auto-fills form
+- [x] Run Agent button: disabled + spinner while running
+- [x] Live execution panel: terminal-style SSE trace + 3 step cards
+- [x] Results dashboard: Top 3 job cards with animated score bars
+- [x] Resume side-by-side diff (original vs tailored)
+- [x] Export PDF button → calls `/export-resume` → triggers download
+- [x] Single self-contained file (no local imports)
+
+### Phase 5 — Integration Test
+- [ ] `curl http://localhost:8000/health` returns `ollama_connected: true`
+- [ ] `POST /run-agent` SSE stream completes all events
+- [ ] Frontend loads in browser and health dot turns green
+
+### Phase 6 — Final Checks
+- [x] `pytest tests/test_agent.py -v` → 11 passed
+- [x] `python main.py --dry-run` → completes without errors
+- [x] `frontend/index.html` is self-contained (no local file imports)
+- [x] `README.md` updated with full-stack instructions
+- [ ] `frontend/index.html` opens in browser with green health dot (requires uvicorn running)
+
+---
+
+## WHAT'S BEEN BUILT (COMPLETED FILES)
+
+| File | Status | Notes |
+|------|--------|-------|
+| `main.py` | Done | 6 bugs fixed + `--dry-run` + `--timeout` |
+| `jobs_dataset.csv` | Done | Skills now comma-separated |
+| `requirements.txt` | Done | All deps including FastAPI, reportlab, pdfplumber |
+| `api_server.py` | Done | Full FastAPI backend with SSE |
+| `frontend/index.html` | Done | Single-file UI, Terminal Intelligence theme |
+| `tests/test_agent.py` | Done | 11 tests, all passing |
+| `README.md` | Done | Full-stack instructions |
+
+---
+
+---
+
 ## CONTEXT & REFERENCE FILES
 
 You have been given 3 reference files. Use them as follows:

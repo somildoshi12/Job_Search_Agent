@@ -10,13 +10,25 @@ Architecture:
 =============================================================================
 """
 
+from __future__ import annotations
+
 import json
 import csv
+import os
 import re
 import sys
+import argparse
 import textwrap
 from typing import Any
+from pathlib import Path
 import requests  # pip install requests
+
+# Load .env file if present (GEMINI_API_KEY etc.)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / ".env")
+except ImportError:
+    pass  # python-dotenv not installed; rely on environment variables
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIGURATION
@@ -24,10 +36,14 @@ import requests  # pip install requests
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
 # DeepSeek-R1 8B is a strong reasoning model that fits comfortably on M4 16 GB.
-# It uses ~5-6 GB RAM leaving plenty for the OS and tools.
 MODEL_NAME = "deepseek-r1:8b"
 DATASET_PATH = "jobs_dataset.csv"
 MAX_AGENT_ITERATIONS = 6   # Safety cap on the ReAct loop
+OLLAMA_TIMEOUT = 120       # Default timeout; overridden per-call for heavy tools
+
+# Gemini API configuration (set GEMINI_API_KEY in .env)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL   = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # COLOUR HELPERS  (works on macOS terminal)
@@ -116,11 +132,11 @@ def filtering_tool(
     filtered = [j for j in filtered if j["years_experience"] <= max_years_experience + 1]
     trace.append(f"Experience cap (≤{max_years_experience}+1 yrs): {exp_before} → {len(filtered)} jobs")
 
-    # Rule 4 – Skill overlap
+    # Rule 4 – Skill overlap (CSV uses comma-separated skills)
     skill_before = len(filtered)
     candidate_skills_lower = {s.strip().lower() for s in required_skills}
     def has_skill_overlap(job):
-        job_skills_lower = {s.strip().lower() for s in job["required_skills"].split()}
+        job_skills_lower = {s.strip().lower() for s in job["required_skills"].split(",")}
         return len(candidate_skills_lower & job_skills_lower) > 0
     filtered = [j for j in filtered if has_skill_overlap(j)]
     trace.append(f"Skill overlap filter: {skill_before} → {len(filtered)} jobs")
@@ -160,6 +176,7 @@ def ranking_tool(
     ranked = []
 
     for job in jobs:
+        # CSV uses comma-separated skills
         job_skills = [s.strip().lower() for s in job["required_skills"].split(",")]
         # --- Skill Match Score (50 pts) ---
         matched = sum(1 for cs in candidate_skills_lower
@@ -211,10 +228,81 @@ def ranking_tool(
 # TOOL 3 — RESUME TAILORING TOOL  (LLM-powered)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _parse_tailoring_json(response_text: str) -> dict | None:
+    """
+    Robustly extract the tailoring JSON from an LLM response.
+    Cascade:
+      1. Strip ```json ... ``` fences, then try json.loads()
+      2. Try json.loads() on full text
+      3. Regex search for JSON with required key
+      4. Line-by-line manual extraction
+    """
+    # Step 1: strip markdown fences
+    stripped = re.sub(r"```(?:json)?\s*", "", response_text)
+    stripped = re.sub(r"```", "", stripped).strip()
+    try:
+        obj = json.loads(stripped)
+        if "professional_summary" in obj:
+            return obj
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Step 2: try full raw text
+    try:
+        obj = json.loads(response_text)
+        if "professional_summary" in obj:
+            return obj
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Step 3: regex for JSON block
+    match = re.search(r'\{[\s\S]*?"professional_summary"[\s\S]*?\}', response_text)
+    if match:
+        try:
+            obj = json.loads(match.group())
+            if "professional_summary" in obj:
+                return obj
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Step 4: line-by-line manual extraction
+    result = {}
+    current_key = None
+    buffer = []
+    key_map = {
+        "professional_summary": "professional_summary",
+        "bullet_1_rewritten": "bullet_1_rewritten",
+        "bullet_2_rewritten": "bullet_2_rewritten",
+    }
+    for line in response_text.splitlines():
+        for key in key_map:
+            if f'"{key}"' in line or f"'{key}'" in line:
+                if current_key and buffer:
+                    result[current_key] = " ".join(buffer).strip().strip('"').strip("'")
+                current_key = key
+                buffer = []
+                # Try to capture inline value
+                m = re.search(r'["\']' + key + r'["\']:\s*["\'](.+)', line)
+                if m:
+                    buffer.append(m.group(1).rstrip('",'))
+                break
+        else:
+            if current_key:
+                buffer.append(line.strip().strip('"').strip(','))
+    if current_key and buffer:
+        result[current_key] = " ".join(buffer).strip()
+
+    if "professional_summary" in result:
+        return result
+
+    return None
+
+
 def resume_tailoring_tool(
     job: dict,
     candidate_profile: dict,
     llm_call_fn,
+    timeout: int = 300,
 ) -> dict:
     """
     Uses the LLM to rewrite:
@@ -252,18 +340,16 @@ Do NOT generate a full resume. Return ONLY valid JSON in this exact format:
   "bullet_2_rewritten": "..."
 }}"""
 
-    response_text = llm_call_fn(prompt)
+    response_text = llm_call_fn(prompt, timeout=timeout)
 
-    # Extract JSON from response (DeepSeek-R1 may include <think> tags)
-    json_match = re.search(r'\{[\s\S]*"professional_summary"[\s\S]*\}', response_text)
-    if json_match:
-        try:
-            result = json.loads(json_match.group())
-            return {"success": True, "tailored": result, "job_applied_to": job["job_title"]}
-        except json.JSONDecodeError:
-            pass
+    # Strip <think> blocks before parsing (DeepSeek-R1 reasoning)
+    clean_text = re.sub(r"<think>[\s\S]*?</think>", "", response_text).strip()
 
-    # Fallback: return raw text if JSON parsing fails
+    parsed = _parse_tailoring_json(clean_text)
+    if parsed:
+        return {"success": True, "tailored": parsed, "job_applied_to": job["job_title"]}
+
+    # Fallback: return raw text if all parsing fails
     return {
         "success": False,
         "raw_output": response_text,
@@ -274,7 +360,7 @@ Do NOT generate a full resume. Return ONLY valid JSON in this exact format:
 # LLM INTERFACE — Ollama
 # ─────────────────────────────────────────────────────────────────────────────
 
-def call_ollama(messages: list[dict], temperature: float = 0.3) -> str:
+def call_ollama(messages: list[dict], temperature: float = 0.3, timeout: int = OLLAMA_TIMEOUT) -> str:
     """Send messages to Ollama and return the assistant reply string."""
     payload = {
         "model": MODEL_NAME,
@@ -283,7 +369,7 @@ def call_ollama(messages: list[dict], temperature: float = 0.3) -> str:
         "options": {"temperature": temperature},
     }
     try:
-        resp = requests.post(OLLAMA_URL, json=payload, timeout=120)
+        resp = requests.post(OLLAMA_URL, json=payload, timeout=timeout)
         resp.raise_for_status()
         return resp.json()["message"]["content"]
     except requests.exceptions.ConnectionError:
@@ -291,9 +377,66 @@ def call_ollama(messages: list[dict], temperature: float = 0.3) -> str:
         print(f"  Run: {C.BOLD}ollama serve{C.RESET}  in a separate terminal.")
         sys.exit(1)
 
-def call_ollama_simple(prompt: str) -> str:
+def call_ollama_simple(prompt: str, timeout: int = OLLAMA_TIMEOUT) -> str:
     """Convenience wrapper for a single-turn call."""
-    return call_ollama([{"role": "user", "content": prompt}])
+    return call_ollama([{"role": "user", "content": prompt}], timeout=timeout)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LLM INTERFACE — Gemini API
+# ─────────────────────────────────────────────────────────────────────────────
+
+def call_gemini(messages: list[dict], temperature: float = 0.3, timeout: int = 60) -> str:
+    """Send messages to Gemini API and return the assistant reply string."""
+    if not GEMINI_API_KEY:
+        print(f"{C.RED}✗ GEMINI_API_KEY not set. Add it to the .env file:{C.RESET}")
+        print(f"  GEMINI_API_KEY=your_key_here")
+        sys.exit(1)
+    try:
+        from google import genai
+        from google.genai import types as genai_types
+    except ImportError:
+        print(f"{C.RED}✗ google-genai not installed.{C.RESET}")
+        print(f"  Run: {C.BOLD}pip install google-genai{C.RESET}")
+        sys.exit(1)
+
+    client = genai.Client(api_key=GEMINI_API_KEY)
+
+    # Extract system instruction (Gemini handles it separately)
+    system_parts = [m["content"] for m in messages if m["role"] == "system"]
+    system_text  = system_parts[0] if system_parts else None
+
+    # Build chat history (all non-system messages)
+    non_system = [m for m in messages if m["role"] != "system"]
+    contents = [
+        genai_types.Content(
+            role="model" if m["role"] == "assistant" else "user",
+            parts=[genai_types.Part(text=m["content"])]
+        )
+        for m in non_system
+    ]
+
+    config = genai_types.GenerateContentConfig(
+        temperature=temperature,
+        system_instruction=system_text,
+    )
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=contents,
+        config=config,
+    )
+    return response.text
+
+
+def call_gemini_simple(prompt: str, timeout: int = 60) -> str:
+    """Single-turn Gemini call."""
+    return call_gemini([{"role": "user", "content": prompt}], timeout=timeout)
+
+
+def get_llm_caller(provider: str):
+    """Return (multi_turn_fn, simple_fn) for the given LLM provider."""
+    if provider == "gemini":
+        return call_gemini, call_gemini_simple
+    return call_ollama, call_ollama_simple
 
 # ─────────────────────────────────────────────────────────────────────────────
 # AGENT SYSTEM PROMPT
@@ -341,37 +484,63 @@ AGENT RULES:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class JobSearchAgent:
-    def __init__(self, dataset_path: str):
+    def __init__(self, dataset_path: str, provider: str = "deepseek"):
         self.all_jobs = load_dataset(dataset_path)
         self.filtered_jobs: list[dict] = []
         self.ranked_result: dict = {}
         self.tailored_result: dict = {}
         self.conversation: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self.candidate_profile: dict = {}
+        self.provider = provider  # "deepseek" or "gemini"
+        self._llm_fn, self._llm_simple_fn = get_llm_caller(provider)
+        # State machine: all three must be True before finish is accepted
+        self._state = {"filtered": False, "ranked": False, "tailored": False}
+        self._consecutive_no_tool = 0  # Track iterations without a tool call
 
     def _add_message(self, role: str, content: str):
         self.conversation.append({"role": role, "content": content})
 
     def _extract_tool_call(self, text: str) -> dict | None:
-        """Parse a ```tool_call ... ``` block from LLM output."""
+        """
+        Parse a tool call from LLM output. Handles DeepSeek-R1 <think> tags.
+
+        Strategy:
+          1. Strip <think>...</think> blocks first
+          2. Try ```tool_call ... ``` block
+          3. Try bare JSON with "tool" key
+          4. Return None if nothing found
+        """
+        # Strip <think> blocks before searching for tool calls
+        clean = re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
+
+        # Pattern 1: ```tool_call ... ```
+        match = re.search(r"```tool_call\s*(\{[\s\S]*?\})\s*```", clean)
+        if match:
+            try:
+                return json.loads(match.group(1))
+            except json.JSONDecodeError:
+                pass
+
+        # Pattern 2: bare JSON anywhere in the cleaned text
+        for m in re.finditer(r'\{', clean):
+            try:
+                obj = json.loads(clean[m.start():])
+                if "tool" in obj:
+                    return obj
+            except (json.JSONDecodeError, ValueError):
+                continue
+
+        # Pattern 3: try in raw text (in case think tags are malformed)
         match = re.search(r"```tool_call\s*(\{[\s\S]*?\})\s*```", text)
         if match:
             try:
                 return json.loads(match.group(1))
             except json.JSONDecodeError:
                 pass
-        # Fallback: try bare JSON with "tool" key
-        match = re.search(r'\{\s*"tool"\s*:', text)
-        if match:
-            try:
-                obj = json.loads(text[match.start():])
-                if "tool" in obj:
-                    return obj
-            except Exception:
-                pass
+
         return None
 
-    def _dispatch_tool(self, tool_call: dict, profile: dict) -> str:
+    def _dispatch_tool(self, tool_call: dict, profile: dict, timeout: int = OLLAMA_TIMEOUT) -> str:
         """Execute the tool identified in tool_call and return an observation string."""
         tool = tool_call.get("tool")
         params = tool_call.get("params", {})
@@ -386,6 +555,7 @@ class JobSearchAgent:
                 remote_only=params.get("remote_only", False),
             )
             self.filtered_jobs = result["filtered_jobs"]
+            self._state["filtered"] = True
             summary = "\n".join(result["reasoning_trace"])
             job_list = "\n".join(
                 f"  {i+1}. {j['job_title']} @ {j['company']} ({j['location']}) — req. {j['years_experience']}yr"
@@ -403,6 +573,7 @@ class JobSearchAgent:
                 preferred_location=profile["preferred_location"],
             )
             self.ranked_result = result
+            self._state["ranked"] = True
             top3_str = ""
             for i, j in enumerate(result["top_3"]):
                 bd = j["score_breakdown"]
@@ -418,12 +589,15 @@ class JobSearchAgent:
             if not self.ranked_result:
                 return "ERROR: No ranked result available. Call rank_jobs first."
             best_job = self.ranked_result["best_job"]
+            tailor_timeout = 60 if self.provider == "gemini" else 300
             result = resume_tailoring_tool(
                 job=best_job,
                 candidate_profile=profile,
-                llm_call_fn=call_ollama_simple,
+                llm_call_fn=self._llm_simple_fn,
+                timeout=tailor_timeout,
             )
             self.tailored_result = result
+            self._state["tailored"] = True
             if result["success"]:
                 t = result["tailored"]
                 return (
@@ -436,12 +610,19 @@ class JobSearchAgent:
                 return f"Resume tailoring produced raw output:\n{result.get('raw_output', 'N/A')}"
 
         elif tool == "finish":
+            # State machine: block finish if required steps not done
+            missing = [step for step, done in self._state.items() if not done]
+            if missing:
+                return (
+                    f"BLOCKED: Cannot finish yet. Missing steps: {missing}. "
+                    f"Please complete these steps first."
+                )
             return f"AGENT COMPLETE: {params.get('summary', 'Task finished.')}"
 
         else:
             return f"ERROR: Unknown tool '{tool}'"
 
-    def run(self, candidate_profile: dict):
+    def run(self, candidate_profile: dict, timeout: int = OLLAMA_TIMEOUT):
         """Main agent execution loop."""
         self.candidate_profile = candidate_profile
 
@@ -478,7 +659,7 @@ Please begin. Call filter_jobs first.
             print_section(f"AGENT ITERATION {iteration}", C.YELLOW)
 
             # Step 1: LLM thinks and (optionally) calls a tool
-            llm_response = call_ollama(self.conversation, temperature=0.2)
+            llm_response = self._llm_fn(self.conversation, temperature=0.2, timeout=timeout)
             self._add_message("assistant", llm_response)
 
             # Strip <think>...</think> blocks from DeepSeek-R1 for display
@@ -490,20 +671,39 @@ Please begin. Call filter_jobs first.
             tool_call = self._extract_tool_call(llm_response)
 
             if tool_call is None:
-                print(f"{C.DIM}No tool call detected in response. Ending loop.{C.RESET}")
-                break
+                self._consecutive_no_tool += 1
+                print(f"{C.DIM}No tool call detected in response (consecutive: {self._consecutive_no_tool}).{C.RESET}")
+                if self._consecutive_no_tool >= 2:
+                    # Inject reminder to get the agent back on track
+                    missing = [step for step, done in self._state.items() if not done]
+                    reminder = (
+                        f"You must output a tool call in ```tool_call ... ``` format. "
+                        f"Remaining steps to complete: {missing}. "
+                        f"Please call the next required tool now."
+                    )
+                    self._add_message("user", reminder)
+                    self._consecutive_no_tool = 0
+                continue
+            else:
+                self._consecutive_no_tool = 0
 
             tool_name = tool_call.get("tool", "unknown")
             tool_reason = tool_call.get("reason", "")
             print_trace(f"Tool Selected: {tool_name}", tool_reason)
 
             if tool_name == "finish":
+                # Check state machine before accepting finish
+                observation = self._dispatch_tool(tool_call, candidate_profile, timeout=timeout)
+                if observation.startswith("BLOCKED"):
+                    print(f"{C.YELLOW}{observation}{C.RESET}")
+                    self._add_message("user", f"Tool observation:\n{observation}\n\nPlease complete the missing steps.")
+                    continue
                 print(f"\n{C.GREEN}{C.BOLD}✓ Agent signalled completion.{C.RESET}")
                 break
 
             # Step 3: Execute tool
             print_section(f"TOOL EXECUTION: {tool_name.upper()}", C.GREEN)
-            observation = self._dispatch_tool(tool_call, candidate_profile)
+            observation = self._dispatch_tool(tool_call, candidate_profile, timeout=timeout)
             print(observation)
 
             # Step 4: Feed observation back to agent
@@ -560,10 +760,79 @@ Please begin. Call filter_jobs first.
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# DRY RUN — runs filter + rank without Ollama
+# ─────────────────────────────────────────────────────────────────────────────
+
+def dry_run(candidate_profile: dict, dataset_path: str):
+    """Run filtering and ranking without calling Ollama. Useful for testing."""
+    print_section("🧪  DRY RUN MODE (no LLM calls)", C.YELLOW)
+    print(f"Candidate: {candidate_profile.get('name', 'Candidate')}")
+    print(f"Skills   : {', '.join(candidate_profile['skills'])}")
+    print(f"Exp      : {candidate_profile['years_experience']} years")
+    print(f"Location : {candidate_profile['preferred_location']}\n")
+
+    jobs = load_dataset(dataset_path)
+
+    # Filter
+    print_section("TOOL: filter_jobs", C.CYAN)
+    filter_result = filtering_tool(
+        jobs=jobs,
+        preferred_location=candidate_profile["preferred_location"],
+        max_years_experience=candidate_profile["years_experience"],
+        required_skills=candidate_profile["skills"],
+        exclude_companies=candidate_profile.get("exclude_companies"),
+        remote_only=candidate_profile.get("remote_only", False),
+    )
+    for line in filter_result["reasoning_trace"]:
+        print(f"  {line}")
+    print(f"\n{C.GREEN}Filtered: {filter_result['count']} jobs{C.RESET}")
+
+    # Rank
+    print_section("TOOL: rank_jobs", C.CYAN)
+    rank_result = ranking_tool(
+        jobs=filter_result["filtered_jobs"],
+        candidate_skills=candidate_profile["skills"],
+        candidate_years=candidate_profile["years_experience"],
+        preferred_location=candidate_profile["preferred_location"],
+    )
+
+    print(f"{'Rank':<5} {'Job Title':<35} {'Company':<22} {'Score':>6}")
+    print("─" * 75)
+    for i, j in enumerate(rank_result["ranked_jobs"][:10]):
+        print(f"#{i+1:<4} {j['job_title']:<35} {j['company']:<22} {j['score']:>6.1f}")
+
+    best = rank_result["best_job"]
+    if best:
+        print(f"\n{C.GREEN}{C.BOLD}Best Match: {best['job_title']} @ {best['company']} (Score: {best['score']}){C.RESET}")
+
+    print_section("DRY RUN COMPLETE", C.GREEN)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ENTRY POINT  — Edit your candidate profile here
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description="AI Job Search Agent")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run filtering + ranking without calling any LLM",
+    )
+    parser.add_argument(
+        "--llm",
+        choices=["deepseek", "gemini"],
+        default="deepseek",
+        help="LLM provider: 'deepseek' (local Ollama) or 'gemini' (Google API, requires GEMINI_API_KEY in .env)",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=OLLAMA_TIMEOUT,
+        help=f"Request timeout in seconds for DeepSeek/Ollama (default: {OLLAMA_TIMEOUT})",
+    )
+    args = parser.parse_args()
 
     # ── CANDIDATE PROFILE — modify this section ──────────────────────────────
     CANDIDATE_PROFILE = {
@@ -596,5 +865,11 @@ if __name__ == "__main__":
     }
     # ─────────────────────────────────────────────────────────────────────────
 
-    agent = JobSearchAgent(dataset_path=DATASET_PATH)
-    agent.run(CANDIDATE_PROFILE)
+    if args.dry_run:
+        dry_run(CANDIDATE_PROFILE, DATASET_PATH)
+    else:
+        provider = args.llm
+        print(f"{C.CYAN}Using LLM provider: {C.BOLD}{provider.upper()}{C.RESET}")
+        agent = JobSearchAgent(dataset_path=DATASET_PATH, provider=provider)
+        timeout = 60 if provider == "gemini" else args.timeout
+        agent.run(CANDIDATE_PROFILE, timeout=timeout)
