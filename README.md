@@ -1,6 +1,6 @@
 # AI Job Search Agent
 
-An autonomous AI agent that filters, ranks, and tailors your resume for the best-matching jobs — using a local LLM (DeepSeek-R1:8B via Ollama). No data leaves your machine.
+An autonomous AI agent that filters, ranks, and tailors your resume for the best-matching jobs — using a local LLM (Llama-3.2 via Ollama). No data leaves your machine.
 
 ---
 
@@ -15,6 +15,7 @@ brew install ollama
 ```
 
 Verify it installed:
+
 ```bash
 ollama --version
 ```
@@ -22,7 +23,7 @@ ollama --version
 ### Step 2 — Download the LLM (~5 GB, one-time)
 
 ```bash
-ollama pull deepseek-r1:8b
+ollama pull llama3.2
 ```
 
 This downloads the model. Grab a coffee — it's a 5 GB file.
@@ -64,12 +65,15 @@ All 11 tests should pass.
 Open **two terminals**:
 
 **Terminal 1 — start Ollama:**
+
 ```bash
 ollama serve
 ```
+
 Leave this running.
 
 **Terminal 2 — run the agent:**
+
 ```bash
 python3 main.py
 ```
@@ -84,25 +88,29 @@ To customize your profile, edit `CANDIDATE_PROFILE` at the bottom of `main.py`.
 Open **three terminals**:
 
 **Terminal 1 — start Ollama:**
+
 ```bash
 ollama serve
 ```
 
 **Terminal 2 — start the API server:**
+
 ```bash
 cd "/Users/somildoshi/Somil Doshi/Projects/Job_Search_Agent"
 uvicorn api_server:app --reload --port 8000
 ```
 
 You should see:
+
 ```
 INFO:     Uvicorn running on http://127.0.0.1:8000
 ```
 
 **Terminal 3 — (optional) verify the API:**
+
 ```bash
 curl http://localhost:8000/health
-# Expected: {"status":"ok","model":"deepseek-r1:8b","ollama_connected":true}
+# Expected: {"status":"ok","model":"llama3.2","ollama_connected":true}
 ```
 
 **Browser — open the UI:**
@@ -110,6 +118,7 @@ curl http://localhost:8000/health
 Double-click `frontend/index.html` or drag it into Chrome/Safari. The status dot in the top-right should turn **green** (Ollama connected).
 
 Then:
+
 1. Fill in your profile (skills are pre-filled with a sample set)
 2. Optionally drag-drop your resume PDF to auto-extract summary + bullets
 3. Click **⚡ Run Agent**
@@ -124,7 +133,7 @@ Then:
 Candidate Profile
       │
       ▼
-DeepSeek-R1:8B  ──▶  filter_jobs  ──▶  rank_jobs  ──▶  tailor_resume
+Llama 3.2       ──▶  filter_jobs  ──▶  rank_jobs  ──▶  tailor_resume
   (ReAct loop)        Rule-based      Scored 0–100     LLM rewrites
                       filtering         ranking        summary + bullets
                                                               │
@@ -135,26 +144,26 @@ DeepSeek-R1:8B  ──▶  filter_jobs  ──▶  rank_jobs  ──▶  tailor_
 
 **Stack:**
 
-| File | Purpose |
-|------|---------|
-| `main.py` | CLI agent — ReAct loop, 3 tools, dry-run mode |
-| `api_server.py` | FastAPI backend with SSE streaming |
+| File                  | Purpose                                       |
+| --------------------- | --------------------------------------------- |
+| `main.py`             | CLI agent — ReAct loop, 3 tools, dry-run mode |
+| `api_server.py`       | FastAPI backend with SSE streaming            |
 | `frontend/index.html` | Self-contained interactive UI (no build step) |
-| `tests/test_agent.py` | 11 pytest unit tests |
-| `jobs_dataset.csv` | 25 AI/ML job postings |
+| `tests/test_agent.py` | 11 pytest unit tests                          |
+| `jobs_dataset.csv`    | 25 AI/ML job postings                         |
 
 ---
 
-## Model Choice: Why `deepseek-r1:8b`?
+## Model Choice: Why `llama3.2`?
 
-| Model | RAM | Speed (M4) | Reasoning |
-|-------|-----|------------|-----------|
-| **deepseek-r1:8b** ✓ | ~5.5 GB | ~15 tok/s | ★★★★★ |
-| llama3.2:3b | ~2.5 GB | ~30 tok/s | ★★★☆☆ |
-| llama3.1:8b | ~5.5 GB | ~15 tok/s | ★★★★☆ |
-| deepseek-r1:14b | ~9 GB | ~8 tok/s | ★★★★★ (tight on 16 GB) |
+| Model           | RAM     | Speed (M4) | Reasoning              |
+| --------------- | ------- | ---------- | ---------------------- |
+| **llama3.2** ✓  | ~2.0 GB | ~25 tok/s  | ★★★★☆                  |
+| llama3.2:3b     | ~2.5 GB | ~30 tok/s  | ★★★☆☆                  |
+| llama3.1:8b     | ~5.5 GB | ~15 tok/s  | ★★★★☆                  |
+| deepseek-r1:14b | ~9 GB   | ~8 tok/s   | ★★★★★ (tight on 16 GB) |
 
-`deepseek-r1:8b` uses internal `<think>` chain-of-thought tags — ideal for ReAct agent decision-making. The code strips these blocks automatically for display and JSON parsing.
+`llama3.2` is a lightweight model that runs quickly locally. The code also strips `<think>` blocks automatically for display and JSON parsing, in case reasoning models are used.
 
 ---
 
@@ -170,7 +179,7 @@ brew install ollama
 ### 2. Pull the model (~5 GB)
 
 ```bash
-ollama pull deepseek-r1:8b
+ollama pull llama3.2
 ```
 
 ### 3. Install Python dependencies
@@ -211,11 +220,13 @@ Edit `CANDIDATE_PROFILE` near the bottom of `main.py` to change your profile.
 ### Option C — Full-stack web UI
 
 **Terminal 1:**
+
 ```bash
 ollama serve
 ```
 
 **Terminal 2:**
+
 ```bash
 uvicorn api_server:app --reload --port 8000
 ```
@@ -247,20 +258,22 @@ Job_Search_Agent/
 
 ## API Reference
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Ollama connectivity check |
-| GET | `/jobs` | All 25 job postings as JSON |
-| POST | `/run-agent` | SSE stream: filter → rank → tailor |
-| POST | `/parse-resume` | Extract text from PDF upload |
-| POST | `/export-resume` | Generate 1-page tailored PDF |
+| Method | Path             | Description                        |
+| ------ | ---------------- | ---------------------------------- |
+| GET    | `/health`        | Ollama connectivity check          |
+| GET    | `/jobs`          | All 25 job postings as JSON        |
+| POST   | `/run-agent`     | SSE stream: filter → rank → tailor |
+| POST   | `/parse-resume`  | Extract text from PDF upload       |
+| POST   | `/export-resume` | Generate 1-page tailored PDF       |
 
 **Health check:**
+
 ```bash
 curl http://localhost:8000/health
 ```
 
 **Run agent (SSE):**
+
 ```bash
 curl -N -X POST http://localhost:8000/run-agent \
   -H "Content-Type: application/json" \
@@ -276,6 +289,7 @@ curl -N -X POST http://localhost:8000/run-agent \
 ```
 
 **Parse resume PDF:**
+
 ```bash
 curl -F "file=@resume.pdf" http://localhost:8000/parse-resume
 ```
@@ -290,19 +304,19 @@ pytest tests/test_agent.py -v
 
 All 11 tests should pass. Coverage:
 
-| Test | What it checks |
-|------|---------------|
-| `test_filtering_location_remote_only` | Only remote jobs returned with `remote_only=True` |
-| `test_filtering_experience_cap` | No jobs requiring >3 years for a 2-year candidate |
-| `test_filtering_company_exclusion` | Excluded company absent from results |
-| `test_filtering_skill_overlap` | Only Python jobs returned when Python is the only skill |
-| `test_ranking_score_range` | All scores 0–100 |
-| `test_ranking_top_job_highest_score` | First job has highest score |
-| `test_ranking_skill_proportional` | 5/5 match beats 1/5 match |
-| `test_ranking_top3_count` | `top_3` has ≤ 3 items |
-| `test_dataset_integrity` | 25 rows, 7 columns, valid years, no empty fields |
-| `test_state_machine_blocks_finish` | `finish` rejected when steps incomplete |
-| `test_state_machine_allows_finish_after_all_steps` | `finish` accepted after all 3 steps |
+| Test                                               | What it checks                                          |
+| -------------------------------------------------- | ------------------------------------------------------- |
+| `test_filtering_location_remote_only`              | Only remote jobs returned with `remote_only=True`       |
+| `test_filtering_experience_cap`                    | No jobs requiring >3 years for a 2-year candidate       |
+| `test_filtering_company_exclusion`                 | Excluded company absent from results                    |
+| `test_filtering_skill_overlap`                     | Only Python jobs returned when Python is the only skill |
+| `test_ranking_score_range`                         | All scores 0–100                                        |
+| `test_ranking_top_job_highest_score`               | First job has highest score                             |
+| `test_ranking_skill_proportional`                  | 5/5 match beats 1/5 match                               |
+| `test_ranking_top3_count`                          | `top_3` has ≤ 3 items                                   |
+| `test_dataset_integrity`                           | 25 rows, 7 columns, valid years, no empty fields        |
+| `test_state_machine_blocks_finish`                 | `finish` rejected when steps incomplete                 |
+| `test_state_machine_allows_finish_after_all_steps` | `finish` accepted after all 3 steps                     |
 
 ---
 
@@ -328,22 +342,22 @@ CANDIDATE_PROFILE = {
 
 ## Scoring Breakdown
 
-| Dimension | Max Points | Calculation |
-|-----------|-----------|-------------|
-| Skill Match | 50 | `(matched_skills / total_job_skills) × 50` |
-| Experience Fit | 30 | 30 (exact), 22 (±1yr), 12 (±2yr), ≤5 (±3yr+) |
-| Location Match | 20 | 20 (city match), 15 (remote), 5 (other) |
+| Dimension      | Max Points | Calculation                                  |
+| -------------- | ---------- | -------------------------------------------- |
+| Skill Match    | 50         | `(matched_skills / total_job_skills) × 50`   |
+| Experience Fit | 30         | 30 (exact), 22 (±1yr), 12 (±2yr), ≤5 (±3yr+) |
+| Location Match | 20         | 20 (city match), 15 (remote), 5 (other)      |
 
 ---
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---------|-----|
-| `ConnectionError` on start | Run `ollama serve` in a separate terminal |
-| `model not found` | Run `ollama pull deepseek-r1:8b` |
+| Symptom                       | Fix                                          |
+| ----------------------------- | -------------------------------------------- |
+| `ConnectionError` on start    | Run `ollama serve` in a separate terminal    |
+| `model not found`             | Run `ollama pull llama3.2`                   |
 | Agent loops without finishing | Increase `MAX_AGENT_ITERATIONS` in `main.py` |
-| Slow responses | Normal on CPU; M4 Metal gives ~15 tok/s |
-| Frontend shows "API offline" | Start: `uvicorn api_server:app --port 8000` |
-| PDF export fails | Run: `pip install reportlab pdfplumber` |
-| Timeout on resume tailoring | Use: `python main.py --timeout 300` |
+| Slow responses                | Normal on CPU; M4 Metal gives ~15 tok/s      |
+| Frontend shows "API offline"  | Start: `uvicorn api_server:app --port 8000`  |
+| PDF export fails              | Run: `pip install reportlab pdfplumber`      |
+| Timeout on resume tailoring   | Use: `python main.py --timeout 300`          |

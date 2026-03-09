@@ -2,7 +2,7 @@
 =============================================================================
 AI Job Search Agent - Single LLM-Based Agent with Tool Calling
 =============================================================================
-Uses Ollama (local LLM) with DeepSeek-R1:8B for reasoning and tool dispatch.
+Uses Ollama (local LLM) with Qwen 3.5 4B for reasoning and tool dispatch.
 Tools: FilteringTool, RankingTool, ResumeTailoringTool
 
 Architecture:
@@ -23,7 +23,7 @@ from typing import Any
 from pathlib import Path
 import requests  # pip install requests
 
-# Load .env file if present (GEMINI_API_KEY etc.)
+# Load .env file if present
 try:
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).parent / ".env")
@@ -35,15 +35,11 @@ except ImportError:
 # ─────────────────────────────────────────────────────────────────────────────
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
-# DeepSeek-R1 8B is a strong reasoning model that fits comfortably on M4 16 GB.
-MODEL_NAME = "deepseek-r1:8b"
+MODEL_NAME = "qwen3.5:4b"
 DATASET_PATH = "jobs_dataset.csv"
 MAX_AGENT_ITERATIONS = 6   # Safety cap on the ReAct loop
 OLLAMA_TIMEOUT = 120       # Default timeout; overridden per-call for heavy tools
 
-# Gemini API configuration (set GEMINI_API_KEY in .env)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL   = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # COLOUR HELPERS  (works on macOS terminal)
@@ -313,7 +309,7 @@ def resume_tailoring_tool(
     bullet_1 = candidate_profile.get("bullet_1", "Developed Python ETL pipelines processing 10M+ records daily.")
     bullet_2 = candidate_profile.get("bullet_2", "Built SQL dashboards for operational KPIs and business reporting.")
 
-    prompt = f"""You are an expert resume writer.
+    prompt = f"""You are an expert resume writer. Your task is to make MINIMAL, targeted edits to existing resume content to better align it with a specific job posting.
 
 === TARGET JOB ===
 Title: {job['job_title']}
@@ -321,19 +317,21 @@ Company: {job['company']}
 Required Skills: {job['required_skills']}
 Description: {job['job_description']}
 
-=== CANDIDATE PROFILE ===
-Skills: {', '.join(candidate_profile['skills'])}
-Experience: {candidate_profile['years_experience']} years
+=== EXISTING RESUME CONTENT (keep structure, improve alignment) ===
 Current Summary: {candidate_profile.get('current_summary', 'Data professional with experience in Python and analytics.')}
 Bullet 1: {bullet_1}
 Bullet 2: {bullet_2}
 
-=== TASK ===
-1. Write a tailored Professional Summary (3-4 sentences) that highlights the candidate's alignment with this specific role.
-2. Rewrite Bullet 1 to better align with the job requirements — keep it achievement-oriented and include metrics.
-3. Rewrite Bullet 2 to better align with the job requirements — keep it achievement-oriented and include metrics.
+=== STRICT RULES ===
+- Keep the same sentence structure and voice as the originals
+- Only swap in keywords/technologies from the job description that the candidate already uses
+- Keep all existing metrics (percentages, numbers) — you may add ONE metric if clearly supported
+- Do NOT invent new projects, tools, or accomplishments
+- Each bullet must remain a single sentence starting with a strong past-tense action verb
+- The summary must stay 2-3 sentences, tight and specific to this role
+- Do NOT rewrite from scratch — edit surgically
 
-Do NOT generate a full resume. Return ONLY valid JSON in this exact format:
+Return ONLY valid JSON (no markdown, no extra text):
 {{
   "professional_summary": "...",
   "bullet_1_rewritten": "...",
@@ -342,7 +340,7 @@ Do NOT generate a full resume. Return ONLY valid JSON in this exact format:
 
     response_text = llm_call_fn(prompt, timeout=timeout)
 
-    # Strip <think> blocks before parsing (DeepSeek-R1 reasoning)
+    # Strip <think> blocks before parsing (in case of reasoning models)
     clean_text = re.sub(r"<think>[\s\S]*?</think>", "", response_text).strip()
 
     parsed = _parse_tailoring_json(clean_text)
@@ -367,6 +365,7 @@ def call_ollama(messages: list[dict], temperature: float = 0.3, timeout: int = O
         "messages": messages,
         "stream": False,
         "options": {"temperature": temperature},
+        "think": False,  # Disable Qwen3.5 chain-of-thought for speed
     }
     try:
         resp = requests.post(OLLAMA_URL, json=payload, timeout=timeout)
@@ -381,61 +380,8 @@ def call_ollama_simple(prompt: str, timeout: int = OLLAMA_TIMEOUT) -> str:
     """Convenience wrapper for a single-turn call."""
     return call_ollama([{"role": "user", "content": prompt}], timeout=timeout)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# LLM INTERFACE — Gemini API
-# ─────────────────────────────────────────────────────────────────────────────
-
-def call_gemini(messages: list[dict], temperature: float = 0.3, timeout: int = 60) -> str:
-    """Send messages to Gemini API and return the assistant reply string."""
-    if not GEMINI_API_KEY:
-        print(f"{C.RED}✗ GEMINI_API_KEY not set. Add it to the .env file:{C.RESET}")
-        print(f"  GEMINI_API_KEY=your_key_here")
-        sys.exit(1)
-    try:
-        from google import genai
-        from google.genai import types as genai_types
-    except ImportError:
-        print(f"{C.RED}✗ google-genai not installed.{C.RESET}")
-        print(f"  Run: {C.BOLD}pip install google-genai{C.RESET}")
-        sys.exit(1)
-
-    client = genai.Client(api_key=GEMINI_API_KEY)
-
-    # Extract system instruction (Gemini handles it separately)
-    system_parts = [m["content"] for m in messages if m["role"] == "system"]
-    system_text  = system_parts[0] if system_parts else None
-
-    # Build chat history (all non-system messages)
-    non_system = [m for m in messages if m["role"] != "system"]
-    contents = [
-        genai_types.Content(
-            role="model" if m["role"] == "assistant" else "user",
-            parts=[genai_types.Part(text=m["content"])]
-        )
-        for m in non_system
-    ]
-
-    config = genai_types.GenerateContentConfig(
-        temperature=temperature,
-        system_instruction=system_text,
-    )
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=contents,
-        config=config,
-    )
-    return response.text
-
-
-def call_gemini_simple(prompt: str, timeout: int = 60) -> str:
-    """Single-turn Gemini call."""
-    return call_gemini([{"role": "user", "content": prompt}], timeout=timeout)
-
-
 def get_llm_caller(provider: str):
     """Return (multi_turn_fn, simple_fn) for the given LLM provider."""
-    if provider == "gemini":
-        return call_gemini, call_gemini_simple
     return call_ollama, call_ollama_simple
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -484,14 +430,14 @@ AGENT RULES:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class JobSearchAgent:
-    def __init__(self, dataset_path: str, provider: str = "deepseek"):
+    def __init__(self, dataset_path: str, provider: str = "llama"):
         self.all_jobs = load_dataset(dataset_path)
         self.filtered_jobs: list[dict] = []
         self.ranked_result: dict = {}
         self.tailored_result: dict = {}
         self.conversation: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self.candidate_profile: dict = {}
-        self.provider = provider  # "deepseek" or "gemini"
+        self.provider = provider
         self._llm_fn, self._llm_simple_fn = get_llm_caller(provider)
         # State machine: all three must be True before finish is accepted
         self._state = {"filtered": False, "ranked": False, "tailored": False}
@@ -502,7 +448,7 @@ class JobSearchAgent:
 
     def _extract_tool_call(self, text: str) -> dict | None:
         """
-        Parse a tool call from LLM output. Handles DeepSeek-R1 <think> tags.
+        Parse a tool call from LLM output. Handles <think> tags if present.
 
         Strategy:
           1. Strip <think>...</think> blocks first
@@ -589,7 +535,7 @@ class JobSearchAgent:
             if not self.ranked_result:
                 return "ERROR: No ranked result available. Call rank_jobs first."
             best_job = self.ranked_result["best_job"]
-            tailor_timeout = 60 if self.provider == "gemini" else 300
+            tailor_timeout = 300
             result = resume_tailoring_tool(
                 job=best_job,
                 candidate_profile=profile,
@@ -662,7 +608,7 @@ Please begin. Call filter_jobs first.
             llm_response = self._llm_fn(self.conversation, temperature=0.2, timeout=timeout)
             self._add_message("assistant", llm_response)
 
-            # Strip <think>...</think> blocks from DeepSeek-R1 for display
+            # Strip <think>...</think> blocks for display (if any)
             display_response = re.sub(r"<think>[\s\S]*?</think>", "", llm_response).strip()
             print(f"{C.CYAN}Agent Reasoning & Action:{C.RESET}")
             print(display_response)
@@ -821,16 +767,10 @@ if __name__ == "__main__":
         help="Run filtering + ranking without calling any LLM",
     )
     parser.add_argument(
-        "--llm",
-        choices=["deepseek", "gemini"],
-        default="deepseek",
-        help="LLM provider: 'deepseek' (local Ollama) or 'gemini' (Google API, requires GEMINI_API_KEY in .env)",
-    )
-    parser.add_argument(
         "--timeout",
         type=int,
         default=OLLAMA_TIMEOUT,
-        help=f"Request timeout in seconds for DeepSeek/Ollama (default: {OLLAMA_TIMEOUT})",
+        help=f"Request timeout in seconds for Ollama (default: {OLLAMA_TIMEOUT})",
     )
     args = parser.parse_args()
 
@@ -868,8 +808,6 @@ if __name__ == "__main__":
     if args.dry_run:
         dry_run(CANDIDATE_PROFILE, DATASET_PATH)
     else:
-        provider = args.llm
-        print(f"{C.CYAN}Using LLM provider: {C.BOLD}{provider.upper()}{C.RESET}")
-        agent = JobSearchAgent(dataset_path=DATASET_PATH, provider=provider)
-        timeout = 60 if provider == "gemini" else args.timeout
-        agent.run(CANDIDATE_PROFILE, timeout=timeout)
+        print(f"{C.CYAN}Using LLM provider: {C.BOLD}LLAMA{C.RESET}")
+        agent = JobSearchAgent(dataset_path=DATASET_PATH, provider="llama")
+        agent.run(CANDIDATE_PROFILE, timeout=args.timeout)

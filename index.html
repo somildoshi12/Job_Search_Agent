@@ -1,774 +1,1694 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI Job Search Agent</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Job Search Agent</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
 
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --bg:      #0a0a0f; --surface: #12121a; --surface2: #1a1a2a; --border: #2a2a3a;
-      --cyan:    #00d4ff; --violet:  #7c3aed; --success:  #10b981;
-      --warn:    #f59e0b; --error:   #ef4444;
-      --text:    #e2e8f0; --muted:   #64748b;
-      --font-h:  'Syne', sans-serif;
-      --font-b:  'DM Sans', sans-serif;
-      --font-m:  'JetBrains Mono', monospace;
-    }
-    html { scroll-behavior: smooth; }
-    body { background: var(--bg); color: var(--text); font-family: var(--font-b); font-size: 15px; line-height: 1.6; min-height: 100vh; }
-    h1,h2,h3 { font-family: var(--font-h); }
-    .mono { font-family: var(--font-m); }
-    .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
-
-    /* ── Header ─────────────────────────────────────── */
-    header { padding: 36px 0 28px; border-bottom: 1px solid var(--border); position: relative; overflow: hidden; }
-    header::before { content: ''; position: absolute; top: -80px; left: 50%; transform: translateX(-50%); width: 600px; height: 200px; background: radial-gradient(ellipse, rgba(0,212,255,.1) 0%, transparent 70%); pointer-events: none; }
-    .header-inner { display: flex; align-items: center; gap: 18px; }
-    .logo { width: 48px; height: 48px; flex-shrink: 0; }
-    .logo svg { width: 100%; height: 100%; }
-    .logo-spin { animation: spin 9s linear infinite; transform-origin: center; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .header-text h1 { font-size: 26px; font-weight: 800; background: linear-gradient(135deg, var(--cyan) 0%, var(--violet) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1.1; }
-    .header-text p  { color: var(--muted); font-size: 12px; margin-top: 2px; }
-    .status-pill { margin-left: auto; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 100px; border: 1px solid var(--border); font-size: 12px; font-family: var(--font-m); color: var(--muted); background: var(--surface); white-space: nowrap; }
-    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); transition: background .3s; }
-    .status-dot.ok   { background: var(--success); box-shadow: 0 0 6px var(--success); }
-    .status-dot.fail { background: var(--error);   box-shadow: 0 0 6px var(--error); }
-
-    /* ── Layout ─────────────────────────────────────── */
-    main { padding: 36px 0 80px; }
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-    @media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px; }
-    .card-title { font-family: var(--font-h); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .09em; color: var(--cyan); margin-bottom: 18px; }
-
-    /* ── Form controls ──────────────────────────────── */
-    .field { margin-bottom: 14px; }
-    .field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 5px; font-family: var(--font-m); }
-    .field input, .field select, .field textarea { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--font-b); font-size: 14px; padding: 8px 11px; outline: none; transition: border-color .2s; }
-    .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--cyan); }
-    .field textarea { resize: vertical; min-height: 64px; }
-
-    /* Tag chips */
-    .tag-wrap { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 5px 9px; display: flex; flex-wrap: wrap; gap: 5px; cursor: text; transition: border-color .2s; }
-    .tag-wrap:focus-within { border-color: var(--cyan); }
-    .tag { display: inline-flex; align-items: center; gap: 4px; background: rgba(0,212,255,.1); border: 1px solid rgba(0,212,255,.25); color: var(--cyan); border-radius: 5px; padding: 2px 7px; font-size: 11px; font-family: var(--font-m); }
-    .tag-x { cursor: pointer; opacity: .6; background: none; border: none; color: var(--cyan); font-size: 13px; padding: 0; line-height: 1; }
-    .tag-x:hover { opacity: 1; }
-    .tag-input { border: none; outline: none; background: transparent; color: var(--text); font-size: 13px; min-width: 100px; flex: 1; padding: 2px 0; }
-
-    /* Toggle */
-    .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-    .toggle-row span { font-size: 13px; }
-    .toggle { position: relative; width: 38px; height: 21px; }
-    .toggle input { opacity: 0; width: 0; height: 0; }
-    .slider { position: absolute; inset: 0; background: var(--surface2); border: 1px solid var(--border); border-radius: 21px; cursor: pointer; transition: background .2s; }
-    .slider::before { content: ''; position: absolute; width: 13px; height: 13px; left: 3px; top: 3px; background: var(--muted); border-radius: 50%; transition: transform .2s, background .2s; }
-    .toggle input:checked + .slider { background: rgba(0,212,255,.18); border-color: var(--cyan); }
-    .toggle input:checked + .slider::before { transform: translateX(17px); background: var(--cyan); }
-
-    /* ── LLM Selector ───────────────────────────────── */
-    .llm-selector { margin-top: 22px; }
-    .llm-selector .card-title { margin-bottom: 12px; }
-    .llm-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .llm-option { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: 9px; cursor: pointer; transition: border-color .2s, background .2s; }
-    .llm-option:hover { border-color: var(--cyan); }
-    .llm-option.selected { border-color: var(--cyan); background: rgba(0,212,255,.06); }
-    .llm-option input[type=radio] { display: none; }
-    .llm-icon { font-size: 20px; flex-shrink: 0; }
-    .llm-name { font-family: var(--font-h); font-size: 13px; font-weight: 700; }
-    .llm-desc { font-size: 11px; color: var(--muted); margin-top: 1px; }
-
-    /* ── Drop zone ──────────────────────────────────── */
-    .drop-zone { border: 2px dashed var(--border); border-radius: 10px; padding: 24px 18px; text-align: center; cursor: pointer; transition: border-color .2s, background .2s; background: var(--surface2); position: relative; }
-    .drop-zone.drag-over { border-color: var(--cyan); background: rgba(0,212,255,.04); }
-    .drop-zone.has-file  { border-color: var(--success); border-style: solid; }
-    .drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
-    .drop-icon { font-size: 26px; margin-bottom: 6px; }
-    .drop-text { font-size: 13px; color: var(--muted); }
-    .drop-text strong { color: var(--cyan); }
-    .drop-filename { display: none; font-family: var(--font-m); font-size: 11px; color: var(--success); margin-top: 5px; }
-    .has-file .drop-filename { display: block; }
-    .parse-status { font-size: 11px; font-family: var(--font-m); margin-top: 6px; color: var(--muted); min-height: 16px; }
-
-    /* ── Run button ─────────────────────────────────── */
-    .run-btn { width: 100%; margin-top: 24px; padding: 15px; background: linear-gradient(135deg, var(--cyan) 0%, var(--violet) 100%); color: #000; font-family: var(--font-h); font-size: 15px; font-weight: 700; border: none; border-radius: 10px; cursor: pointer; letter-spacing: .04em; transition: opacity .2s, transform .1s; display: flex; align-items: center; justify-content: center; gap: 8px; }
-    .run-btn:hover:not(:disabled) { opacity: .9; transform: translateY(-1px); }
-    .run-btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
-    .btn-spinner { display: none; width: 16px; height: 16px; border: 2px solid rgba(0,0,0,.3); border-top-color: #000; border-radius: 50%; animation: spin .6s linear infinite; }
-    .loading .btn-spinner { display: block; }
-
-    /* ── Progress bar ───────────────────────────────── */
-    #progress-section { display: none; margin-top: 28px; }
-    .progress-stages { display: flex; justify-content: space-between; margin-bottom: 8px; }
-    .progress-stage { display: flex; align-items: center; gap: 6px; font-family: var(--font-m); font-size: 11px; color: var(--muted); transition: color .3s; }
-    .progress-stage .stage-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); border: 1px solid var(--muted); transition: background .3s, border-color .3s; }
-    .progress-stage.active { color: var(--cyan); }
-    .progress-stage.active .stage-dot { background: var(--cyan); border-color: var(--cyan); box-shadow: 0 0 5px var(--cyan); }
-    .progress-stage.done { color: var(--success); }
-    .progress-stage.done .stage-dot { background: var(--success); border-color: var(--success); }
-    .progress-bar-bg { width: 100%; height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; border: 1px solid var(--border); }
-    .progress-bar-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--cyan), var(--violet)); width: 0%; transition: width .6s cubic-bezier(.4,0,.2,1); }
-    .progress-label { font-family: var(--font-m); font-size: 12px; color: var(--muted); margin-top: 8px; min-height: 18px; text-align: center; }
-
-    /* ── Execution panel ────────────────────────────── */
-    #exec-section { display: none; margin-top: 28px; }
-    .exec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-    @media (max-width: 720px) { .exec-grid { grid-template-columns: 1fr; } }
-
-    .terminal { background: #050508; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-    .t-bar { background: var(--surface2); border-bottom: 1px solid var(--border); padding: 8px 13px; display: flex; align-items: center; gap: 6px; }
-    .t-dot { width: 9px; height: 9px; border-radius: 50%; }
-    .t-dot:nth-child(1){background:#ff5f57} .t-dot:nth-child(2){background:#febc2e} .t-dot:nth-child(3){background:#28c840}
-    .t-title { margin-left: 8px; font-family: var(--font-m); font-size: 11px; color: var(--muted); }
-    .t-body { padding: 13px; font-family: var(--font-m); font-size: 12px; line-height: 1.75; height: 340px; overflow-y: auto; scroll-behavior: smooth; }
-    .log-line { margin-bottom: 1px; }
-    .log-line.info    { color: #94a3b8; }
-    .log-line.success { color: var(--success); }
-    .log-line.cyan    { color: var(--cyan); }
-    .log-line.warn    { color: var(--warn); }
-    .log-line.error   { color: var(--error); }
-    .log-line.dim     { color: #383848; }
-    .log-prompt { color: var(--violet); }
-
-    #live-results { display: flex; flex-direction: column; gap: 12px; }
-    .step-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 13px 15px; opacity: .4; transition: opacity .3s, border-color .3s; }
-    .step-card.active { opacity: 1; border-color: var(--cyan); }
-    .step-card.done   { opacity: 1; border-color: var(--success); }
-    .step-lbl { font-family: var(--font-m); font-size: 11px; color: var(--muted); margin-bottom: 5px; text-transform: uppercase; }
-    .step-card.active .step-lbl { color: var(--cyan); }
-    .step-card.done   .step-lbl { color: var(--success); }
-    .step-val { font-size: 13px; }
-
-    /* ── Results ────────────────────────────────────── */
-    #results-section { display: none; margin-top: 44px; }
-    .section-title { font-family: var(--font-h); font-size: 21px; font-weight: 700; margin-bottom: 22px; }
-    .section-title span { color: var(--cyan); }
-    .divider { height: 1px; background: var(--border); margin: 36px 0; }
-
-    .job-cards { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-bottom: 32px; }
-    @media (max-width: 900px) { .job-cards { grid-template-columns: 1fr; } }
-    .job-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; position: relative; transition: border-color .2s, transform .15s; }
-    .job-card:hover { border-color: var(--cyan); transform: translateY(-2px); }
-    .job-card.rank-1 { border-color: var(--cyan); }
-    .job-rank { position: absolute; top: 13px; right: 13px; font-family: var(--font-m); font-size: 11px; background: rgba(0,212,255,.1); border: 1px solid rgba(0,212,255,.28); color: var(--cyan); padding: 2px 8px; border-radius: 100px; }
-    .job-card.rank-1 .job-rank { background: linear-gradient(135deg,var(--cyan),var(--violet)); color: #000; border-color: transparent; font-weight: 700; }
-    .job-ttl  { font-weight: 600; font-size: 14px; margin-bottom: 3px; padding-right: 46px; }
-    .job-co   { font-size: 12px; color: var(--muted); margin-bottom: 13px; }
-    .score-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
-    .score-lbl { font-family: var(--font-m); font-size: 10px; color: var(--muted); width: 36px; flex-shrink: 0; }
-    .score-bg  { flex: 1; height: 5px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
-    .score-fill{ height: 100%; border-radius: 3px; background: linear-gradient(90deg,var(--cyan),var(--violet)); width: 0; transition: width 1s cubic-bezier(.4,0,.2,1); }
-    .score-num { font-family: var(--font-m); font-size: 10px; color: var(--cyan); width: 26px; text-align: right; }
-    .score-total { font-family: var(--font-m); font-size: 14px; font-weight: 700; color: var(--cyan); margin-top: 9px; }
-    .job-link { display: inline-block; margin-top: 11px; font-size: 11px; color: var(--cyan); text-decoration: none; font-family: var(--font-m); opacity: .65; transition: opacity .2s; }
-    .job-link:hover { opacity: 1; }
-
-    /* Resume diff */
-    .resume-diff { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 20px; }
-    @media (max-width: 720px) { .resume-diff { grid-template-columns: 1fr; } }
-    .diff-pane { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
-    .diff-pane.tailored { border-color: var(--success); }
-    .diff-pane-title { font-family: var(--font-m); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 14px; }
-    .diff-pane.original .diff-pane-title { color: var(--muted); }
-    .diff-pane.tailored .diff-pane-title { color: var(--success); }
-    .diff-sec-lbl { font-size: 11px; color: var(--muted); margin-top: 13px; margin-bottom: 3px; text-transform: uppercase; letter-spacing: .05em; }
-    .diff-text { font-size: 13px; line-height: 1.65; color: var(--text); }
-    .diff-text.empty { color: var(--muted); font-style: italic; }
-
-    .export-btn { margin-top: 22px; padding: 11px 26px; background: transparent; border: 1px solid var(--success); color: var(--success); font-family: var(--font-h); font-size: 13px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: background .2s; }
-    .export-btn:hover:not(:disabled) { background: rgba(16,185,129,.1); }
-    .export-btn:disabled { opacity: .4; cursor: not-allowed; }
-
-    ::-webkit-scrollbar { width: 5px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-    .fade-in { animation: fadeIn .4s ease; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-  </style>
-</head>
-<body>
-
-<!-- ── Header ──────────────────────────────────────────────────────────────── -->
-<header>
-  <div class="container">
-    <div class="header-inner">
-      <div class="logo">
-        <svg viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <polygon class="logo-spin" points="26,4 46,15 46,37 26,48 6,37 6,15" stroke="#00d4ff" stroke-width="1.5" fill="none" opacity=".4"/>
-          <polygon points="26,10 41,18.5 41,33.5 26,42 11,33.5 11,18.5" stroke="#7c3aed" stroke-width="1.5" fill="none" opacity=".6"/>
-          <circle cx="26" cy="26" r="5" fill="url(#grd)"/>
-          <defs><radialGradient id="grd" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#00d4ff"/><stop offset="100%" stop-color="#7c3aed"/></radialGradient></defs>
-        </svg>
-      </div>
-      <div class="header-text">
-        <h1>AI Job Search Agent</h1>
-        <p>ReAct · Local DeepSeek R1 or Gemini · Zero data sharing</p>
-      </div>
-      <div class="status-pill">
-        <div class="status-dot" id="status-dot"></div>
-        <span id="status-label">Checking...</span>
-      </div>
-    </div>
-  </div>
-</header>
-
-<main>
-<div class="container">
-
-  <!-- ── Form ─────────────────────────────────────────────────────────────── -->
-  <div class="grid-2" style="margin-top:32px">
-
-    <!-- Left: Profile -->
-    <div class="card">
-      <div class="card-title">Candidate Profile</div>
-
-      <div class="field">
-        <label>Full Name</label>
-        <input type="text" id="f-name" placeholder="e.g. Somil Doshi" />
-      </div>
-
-      <div class="field">
-        <label>Skills <span style="color:var(--muted)">(Enter or comma to add)</span></label>
-        <div class="tag-wrap" id="skills-wrap">
-          <input class="tag-input" id="skill-input" placeholder="e.g. Python" />
-        </div>
-      </div>
-
-      <div class="grid-2" style="gap:10px">
-        <div class="field">
-          <label>Years of Experience</label>
-          <input type="number" id="f-years" value="2" min="0" max="20" />
-        </div>
-        <div class="field">
-          <label>Preferred Location</label>
-          <input type="text" id="f-location" value="Remote" placeholder="Remote / San Francisco" />
-        </div>
-      </div>
-
-      <div class="field">
-        <label>Exclude Companies <span style="color:var(--muted)">(Enter to add)</span></label>
-        <div class="tag-wrap" id="excl-wrap">
-          <input class="tag-input" id="excl-input" placeholder="e.g. TikTok" />
-        </div>
-      </div>
-
-      <div class="toggle-row">
-        <span>Remote Only</span>
-        <label class="toggle"><input type="checkbox" id="f-remote" /><span class="slider"></span></label>
-      </div>
-
-      <!-- LLM selector (inside left card) -->
-      <div class="llm-selector">
-        <div class="card-title">AI Provider</div>
-        <div class="llm-options">
-          <label class="llm-option selected" id="opt-deepseek" onclick="selectLLM('deepseek')">
-            <input type="radio" name="llm" value="deepseek" checked />
-            <div class="llm-icon">🖥</div>
-            <div>
-              <div class="llm-name">DeepSeek R1</div>
-              <div class="llm-desc">Local · Ollama · Private</div>
-            </div>
-          </label>
-          <label class="llm-option" id="opt-gemini" onclick="selectLLM('gemini')">
-            <input type="radio" name="llm" value="gemini" />
-            <div class="llm-icon">✨</div>
-            <div>
-              <div class="llm-name">Gemini</div>
-              <div class="llm-desc">Cloud · Fast · API Key</div>
-            </div>
-          </label>
-        </div>
-      </div>
-    </div>
-
-    <!-- Right: Resume -->
-    <div class="card">
-      <div class="card-title">Resume</div>
-
-      <div class="drop-zone" id="drop-zone">
-        <input type="file" id="resume-file" accept=".pdf" />
-        <div class="drop-icon">📄</div>
-        <div class="drop-text"><strong>Drop PDF here</strong> or click to browse</div>
-        <div class="drop-filename" id="drop-filename"></div>
-      </div>
-      <div class="parse-status" id="parse-status"></div>
-
-      <div class="field" style="margin-top:14px">
-        <label>Current Summary <span style="color:var(--muted)">(auto-filled from PDF if uploaded)</span></label>
-        <textarea id="f-summary" rows="3" placeholder="Data Science MS student with 2+ years of experience..."></textarea>
-      </div>
-      <div class="field">
-        <label>Bullet 1</label>
-        <textarea id="f-b1" rows="2" placeholder="Developed automated ETL pipelines..."></textarea>
-      </div>
-      <div class="field">
-        <label>Bullet 2</label>
-        <textarea id="f-b2" rows="2" placeholder="Built and deployed a sentiment analysis model..."></textarea>
-      </div>
-    </div>
-  </div>
-
-  <!-- Run button -->
-  <button class="run-btn" id="run-btn" onclick="runAgent()">
-    <span class="btn-spinner" id="btn-spinner"></span>
-    <span id="btn-label">⚡ Run Agent</span>
-  </button>
-
-  <!-- ── Progress bar ───────────────────────────────────────────────────────── -->
-  <section id="progress-section">
-    <div class="progress-stages">
-      <div class="progress-stage" id="ps-filter">
-        <div class="stage-dot"></div><span>① Filter Jobs</span>
-      </div>
-      <div class="progress-stage" id="ps-rank">
-        <div class="stage-dot"></div><span>② Rank &amp; Score</span>
-      </div>
-      <div class="progress-stage" id="ps-tailor">
-        <div class="stage-dot"></div><span>③ Tailor Resume</span>
-      </div>
-    </div>
-    <div class="progress-bar-bg">
-      <div class="progress-bar-fill" id="progress-fill"></div>
-    </div>
-    <div class="progress-label" id="progress-label">Starting agent...</div>
-  </section>
-
-  <!-- ── Execution panel ──────────────────────────────────────────────────── -->
-  <section id="exec-section" style="margin-top:20px">
-    <div class="exec-grid">
-      <div class="terminal">
-        <div class="t-bar">
-          <div class="t-dot"></div><div class="t-dot"></div><div class="t-dot"></div>
-          <span class="t-title">agent · live trace</span>
-        </div>
-        <div class="t-body" id="t-body"></div>
-      </div>
-      <div id="live-results">
-        <div class="step-card" id="sc-filter">
-          <div class="step-lbl">① Filter</div>
-          <div class="step-val" id="sc-filter-val">Waiting...</div>
-        </div>
-        <div class="step-card" id="sc-rank">
-          <div class="step-lbl">② Rank</div>
-          <div class="step-val" id="sc-rank-val">Waiting...</div>
-        </div>
-        <div class="step-card" id="sc-tailor">
-          <div class="step-lbl">③ Tailor Resume</div>
-          <div class="step-val" id="sc-tailor-val">Waiting...</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ── Results ──────────────────────────────────────────────────────────── -->
-  <section id="results-section">
-    <div class="divider"></div>
-    <div class="section-title">Top <span>3</span> Matches</div>
-    <div class="job-cards" id="job-cards"></div>
-
-    <div class="section-title" style="margin-top:8px">Resume <span>Comparison</span></div>
-    <div class="resume-diff">
-      <div class="diff-pane original">
-        <div class="diff-pane-title">Original Resume</div>
-        <div class="diff-sec-lbl">Summary</div>
-        <div class="diff-text" id="orig-summary">—</div>
-        <div class="diff-sec-lbl">Bullet 1</div>
-        <div class="diff-text" id="orig-b1">—</div>
-        <div class="diff-sec-lbl">Bullet 2</div>
-        <div class="diff-text" id="orig-b2">—</div>
-      </div>
-      <div class="diff-pane tailored">
-        <div class="diff-pane-title">✦ Tailored Resume</div>
-        <div class="diff-sec-lbl">Summary</div>
-        <div class="diff-text" id="tail-summary">—</div>
-        <div class="diff-sec-lbl">Bullet 1</div>
-        <div class="diff-text" id="tail-b1">—</div>
-        <div class="diff-sec-lbl">Bullet 2</div>
-        <div class="diff-text" id="tail-b2">—</div>
-      </div>
-    </div>
-    <button class="export-btn" id="export-btn" onclick="exportPDF()" disabled>⬇ Export Tailored PDF</button>
-  </section>
-
-</div>
-</main>
-
-<script>
-  const API = 'http://localhost:8000';
-  let skillTags = ['Python','SQL','R','Machine Learning','Deep Learning',
-                   'PyTorch','TensorFlow','NLP','Transformers','Databricks',
-                   'Airflow','dbt','PostgreSQL','MongoDB','Docker',
-                   'AWS','Power BI','Spark','MLflow','Pandas'];
-  let exclTags     = [];
-  let resumePDFb64 = '';
-  let lastTailored = null;
-  let lastBestJob  = null;
-  let selectedLLM  = 'deepseek';
-
-  // ── Init ──────────────────────────────────────────────────────────────────
-  document.addEventListener('DOMContentLoaded', () => {
-    checkHealth();
-    renderTags('skills-wrap', 'skill-input', skillTags, () => renderTags('skills-wrap','skill-input',skillTags));
-    renderTags('excl-wrap',   'excl-input',  exclTags,  () => renderTags('excl-wrap','excl-input',exclTags));
-    setupTagInput('skill-input', skillTags, () => renderTags('skills-wrap','skill-input',skillTags));
-    setupTagInput('excl-input',  exclTags,  () => renderTags('excl-wrap','excl-input',exclTags));
-    setupDropZone();
-  });
-
-  // ── Health ────────────────────────────────────────────────────────────────
-  async function checkHealth() {
-    const dot = document.getElementById('status-dot');
-    const lbl = document.getElementById('status-label');
-    try {
-      const res  = await fetch(`${API}/health`, { signal: AbortSignal.timeout(4000) });
-      const data = await res.json();
-      if (selectedLLM === 'gemini') {
-        dot.className = data.gemini_configured ? 'status-dot ok' : 'status-dot fail';
-        lbl.textContent = data.gemini_configured ? 'Gemini ready' : 'No API key';
-      } else {
-        dot.className = data.ollama_connected ? 'status-dot ok' : 'status-dot fail';
-        lbl.textContent = data.ollama_connected ? 'Ollama connected' : 'Ollama offline';
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
       }
-    } catch {
-      dot.className = 'status-dot fail';
-      lbl.textContent = 'API offline';
-    }
-  }
-
-  // ── LLM selector ─────────────────────────────────────────────────────────
-  function selectLLM(provider) {
-    selectedLLM = provider;
-    document.getElementById('opt-deepseek').classList.toggle('selected', provider === 'deepseek');
-    document.getElementById('opt-gemini').classList.toggle('selected',   provider === 'gemini');
-    checkHealth();
-  }
-
-  // ── Tag inputs ────────────────────────────────────────────────────────────
-  function setupTagInput(inputId, arr, renderFn) {
-    const input = document.getElementById(inputId);
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Enter' || e.key === ',') {
-        e.preventDefault();
-        const val = input.value.trim().replace(/,$/, '');
-        if (val && !arr.includes(val)) { arr.push(val); renderFn(); }
-        input.value = '';
-      } else if (e.key === 'Backspace' && input.value === '' && arr.length) {
-        arr.pop(); renderFn();
+      :root {
+        --bg: #0a0a0f;
+        --surface: #12121a;
+        --surface2: #1a1a2a;
+        --border: #2a2a3a;
+        --cyan: #00d4ff;
+        --violet: #7c3aed;
+        --success: #10b981;
+        --warn: #f59e0b;
+        --error: #ef4444;
+        --text: #e2e8f0;
+        --muted: #64748b;
+        --font-h: "Syne", sans-serif;
+        --font-b: "DM Sans", sans-serif;
+        --font-m: "JetBrains Mono", monospace;
       }
-    });
-  }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-b);
+        font-size: 15px;
+        line-height: 1.6;
+        min-height: 100vh;
+      }
+      h1,
+      h2,
+      h3 {
+        font-family: var(--font-h);
+      }
+      .mono {
+        font-family: var(--font-m);
+      }
+      .container {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
 
-  function renderTags(wrapId, inputId, arr, renderFn) {
-    const wrap  = document.getElementById(wrapId);
-    const input = document.getElementById(inputId);
-    wrap.querySelectorAll('.tag').forEach(t => t.remove());
-    arr.forEach((s, i) => {
-      const span = document.createElement('span');
-      span.className = 'tag';
-      span.innerHTML = `${esc(s)}<button class="tag-x" title="Remove">×</button>`;
-      span.querySelector('.tag-x').addEventListener('click', e => {
-        e.stopPropagation(); arr.splice(i, 1);
-        renderTags(wrapId, inputId, arr, renderFn);
-      });
-      wrap.insertBefore(span, input);
-    });
-    wrap.addEventListener('click', () => input.focus());
-  }
-
-  // ── Drop zone ─────────────────────────────────────────────────────────────
-  function setupDropZone() {
-    const zone  = document.getElementById('drop-zone');
-    const input = document.getElementById('resume-file');
-    zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
-    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-    zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('drag-over'); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
-    input.addEventListener('change', () => { if (input.files[0]) handleFile(input.files[0]); });
-  }
-
-  async function handleFile(file) {
-    if (!file.name.endsWith('.pdf')) { alert('Please upload a PDF file.'); return; }
-    const zone = document.getElementById('drop-zone');
-    zone.classList.add('has-file');
-    document.getElementById('drop-filename').textContent = file.name;
-    resumePDFb64 = await fileToBase64(file);
-
-    const status = document.getElementById('parse-status');
-    status.style.color = 'var(--muted)';
-    status.textContent = '⏳ Parsing PDF...';
-
-    const form = new FormData();
-    form.append('file', file);
-    try {
-      const res  = await fetch(`${API}/parse-resume`, { method: 'POST', body: form });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      // Auto-fill text areas (only if currently empty)
-      if (data.summary  && !document.getElementById('f-summary').value) document.getElementById('f-summary').value = data.summary;
-      if (data.bullet_1 && !document.getElementById('f-b1').value)      document.getElementById('f-b1').value = data.bullet_1;
-      if (data.bullet_2 && !document.getElementById('f-b2').value)      document.getElementById('f-b2').value = data.bullet_2;
-      status.style.color = 'var(--success)';
-      status.textContent = `✓ Extracted ${data.pages} page(s) — fields auto-filled below`;
-    } catch (err) {
-      status.style.color = 'var(--error)';
-      status.textContent = '✗ Parse failed — fill fields manually';
-    }
-  }
-
-  // ── Progress helpers ──────────────────────────────────────────────────────
-  function setProgress(pct, label) {
-    document.getElementById('progress-fill').style.width = pct + '%';
-    document.getElementById('progress-label').textContent = label;
-  }
-  function stageActive(id)  { document.getElementById(id).className = 'progress-stage active'; }
-  function stageDone(id)    { document.getElementById(id).className = 'progress-stage done'; }
-
-  // ── Run agent ─────────────────────────────────────────────────────────────
-  async function runAgent() {
-    const btn = document.getElementById('run-btn');
-    const lbl = document.getElementById('btn-label');
-    btn.disabled = true; btn.classList.add('loading');
-    lbl.textContent = 'Running...';
-
-    // Show panels
-    document.getElementById('progress-section').style.display = 'block';
-    document.getElementById('exec-section').style.display = 'block';
-    document.getElementById('results-section').style.display = 'none';
-
-    // Reset
-    setProgress(4, 'Starting agent...');
-    ['ps-filter','ps-rank','ps-tailor'].forEach(id => document.getElementById(id).className = 'progress-stage');
-    ['sc-filter','sc-rank','sc-tailor'].forEach(id => document.getElementById(id).className = 'step-card');
-    document.getElementById('sc-filter-val').textContent = 'Waiting...';
-    document.getElementById('sc-rank-val').textContent   = 'Waiting...';
-    document.getElementById('sc-tailor-val').textContent = 'Waiting...';
-    document.getElementById('t-body').innerHTML = '';
-
-    log(`▶ Agent started · provider: ${selectedLLM.toUpperCase()}`, 'cyan');
-
-    const payload = {
-      name:               document.getElementById('f-name').value || 'Candidate',
-      skills:             skillTags,
-      years_experience:   parseInt(document.getElementById('f-years').value) || 2,
-      preferred_location: document.getElementById('f-location').value || 'Remote',
-      remote_only:        document.getElementById('f-remote').checked,
-      exclude_companies:  exclTags,
-      current_summary:    document.getElementById('f-summary').value,
-      bullet_1:           document.getElementById('f-b1').value,
-      bullet_2:           document.getElementById('f-b2').value,
-      resume_pdf_base64:  resumePDFb64,
-      llm_provider:       selectedLLM,
-    };
-
-    try {
-      const res = await fetch(`${API}/run-agent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const reader = res.body.getReader();
-      const dec    = new TextDecoder();
-      let   buf    = '';
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop();
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try { handleSSE(JSON.parse(line.slice(6))); } catch {}
-          }
+      /* ── Header ─────────────────────────────────────── */
+      header {
+        padding: 36px 0 28px;
+        border-bottom: 1px solid var(--border);
+        position: relative;
+        overflow: hidden;
+      }
+      header::before {
+        content: "";
+        position: absolute;
+        top: -80px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 600px;
+        height: 200px;
+        background: radial-gradient(
+          ellipse,
+          rgba(0, 212, 255, 0.1) 0%,
+          transparent 70%
+        );
+        pointer-events: none;
+      }
+      .header-inner {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+      }
+      .logo {
+        width: 48px;
+        height: 48px;
+        flex-shrink: 0;
+      }
+      .logo svg {
+        width: 100%;
+        height: 100%;
+      }
+      .logo-spin {
+        animation: spin 9s linear infinite;
+        transform-origin: center;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
         }
       }
-    } catch (err) {
-      log(`Connection error: ${err.message}`, 'error');
-      setProgress(0, 'Error — see terminal');
-    }
-
-    btn.disabled = false; btn.classList.remove('loading');
-    lbl.textContent = '⚡ Run Again';
-  }
-
-  // ── SSE handler ───────────────────────────────────────────────────────────
-  function handleSSE(ev) {
-    switch (ev.type) {
-      case 'status':
-        log(ev.message, 'info');
-        setProgress(5, ev.message);
-        break;
-
-      case 'filter_start':
-        stageActive('ps-filter');
-        setProgress(10, ev.message);
-        log('⚙ ' + ev.message, 'cyan');
-        document.getElementById('sc-filter').classList.add('active');
-        break;
-
-      case 'filter_result':
-        stageDone('ps-filter');
-        setProgress(33, `Filter complete — ${ev.count} jobs matched`);
-        (ev.trace || []).forEach(t => log('  ' + t, 'dim'));
-        log(`✓ ${ev.count} jobs passed filters`, 'success');
-        document.getElementById('sc-filter').classList.replace('active','done');
-        document.getElementById('sc-filter-val').textContent = `${ev.count} jobs matched`;
-        stageActive('ps-rank');
-        document.getElementById('sc-rank').classList.add('active');
-        document.getElementById('sc-rank-val').textContent = 'Running...';
-        break;
-
-      case 'rank_start':
-        setProgress(38, ev.message);
-        log('⚙ ' + ev.message, 'cyan');
-        break;
-
-      case 'rank_result': {
-        const top3 = ev.top_3 || [];
-        stageDone('ps-rank');
-        setProgress(66, `Ranking complete — #1 is ${top3[0]?.job_title ?? '?'}`);
-        log(`✓ Top pick: ${top3[0]?.job_title} @ ${top3[0]?.company}`, 'success');
-        document.getElementById('sc-rank').classList.replace('active','done');
-        document.getElementById('sc-rank-val').textContent = top3.map((j,i) => `#${i+1} ${j.job_title}`).join(' · ');
-        stageActive('ps-tailor');
-        document.getElementById('sc-tailor').classList.add('active');
-        document.getElementById('sc-tailor-val').textContent = 'Running...';
-        window._top3 = top3;
-        lastBestJob = top3[0] || null;
-        break;
+      .header-text h1 {
+        font-size: 26px;
+        font-weight: 800;
+        background: linear-gradient(135deg, var(--cyan) 0%, var(--violet) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        line-height: 1.1;
+      }
+      .header-text p {
+        color: var(--muted);
+        font-size: 12px;
+        margin-top: 2px;
+      }
+      .status-pill {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 14px;
+        border-radius: 100px;
+        border: 1px solid var(--border);
+        font-size: 12px;
+        font-family: var(--font-m);
+        color: var(--muted);
+        background: var(--surface);
+        white-space: nowrap;
+      }
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--muted);
+        transition: background 0.3s;
+      }
+      .status-dot.ok {
+        background: var(--success);
+        box-shadow: 0 0 6px var(--success);
+      }
+      .status-dot.fail {
+        background: var(--error);
+        box-shadow: 0 0 6px var(--error);
       }
 
-      case 'tailor_start':
-        setProgress(70, ev.message);
-        log('⚙ ' + ev.message, 'cyan');
-        break;
+      /* ── Layout ─────────────────────────────────────── */
+      main {
+        padding: 36px 0 80px;
+      }
+      .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+      @media (max-width: 720px) {
+        .grid-2 {
+          grid-template-columns: 1fr;
+        }
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 22px;
+      }
+      .card-title {
+        font-family: var(--font-h);
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+        color: var(--cyan);
+        margin-bottom: 18px;
+      }
 
-      case 'tailor_result':
-        stageDone('ps-tailor');
-        setProgress(100, `Done — resume tailored for ${ev.job_title}`);
-        log(`✓ Resume tailored for ${ev.job_title} @ ${ev.company}`, 'success');
-        document.getElementById('sc-tailor').classList.replace('active','done');
-        document.getElementById('sc-tailor-val').textContent = ev.job_title;
-        lastTailored = ev;
-        break;
+      /* ── Form controls ──────────────────────────────── */
+      .field {
+        margin-bottom: 14px;
+      }
+      .field label {
+        display: block;
+        font-size: 11px;
+        color: var(--muted);
+        margin-bottom: 5px;
+        font-family: var(--font-m);
+      }
+      .field input,
+      .field select,
+      .field textarea {
+        width: 100%;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text);
+        font-family: var(--font-b);
+        font-size: 14px;
+        padding: 8px 11px;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+      .field input:focus,
+      .field select:focus,
+      .field textarea:focus {
+        border-color: var(--cyan);
+      }
+      .field textarea {
+        resize: vertical;
+        min-height: 64px;
+      }
 
-      case 'error':
-        log('✗ ' + ev.message, 'error');
-        setProgress(document.getElementById('progress-fill').style.width || 0, '⚠ Error — ' + ev.message.slice(0, 60));
-        break;
+      /* Tag chips */
+      .tag-wrap {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 5px 9px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        cursor: text;
+        transition: border-color 0.2s;
+      }
+      .tag-wrap:focus-within {
+        border-color: var(--cyan);
+      }
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: rgba(0, 212, 255, 0.1);
+        border: 1px solid rgba(0, 212, 255, 0.25);
+        color: var(--cyan);
+        border-radius: 5px;
+        padding: 2px 7px;
+        font-size: 11px;
+        font-family: var(--font-m);
+      }
+      .tag-x {
+        cursor: pointer;
+        opacity: 0.6;
+        background: none;
+        border: none;
+        color: var(--cyan);
+        font-size: 13px;
+        padding: 0;
+        line-height: 1;
+      }
+      .tag-x:hover {
+        opacity: 1;
+      }
+      .tag-input {
+        border: none;
+        outline: none;
+        background: transparent;
+        color: var(--text);
+        font-size: 13px;
+        min-width: 100px;
+        flex: 1;
+        padding: 2px 0;
+      }
 
-      case 'complete':
-        log('✔ ' + ev.message, 'success');
-        if (lastTailored || window._top3?.length) showResults();
-        break;
-    }
-  }
+      /* Toggle */
+      .toggle-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+      }
+      .toggle-row span {
+        font-size: 13px;
+      }
+      .toggle {
+        position: relative;
+        width: 38px;
+        height: 21px;
+      }
+      .toggle input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .slider {
+        position: absolute;
+        inset: 0;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 21px;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .slider::before {
+        content: "";
+        position: absolute;
+        width: 13px;
+        height: 13px;
+        left: 3px;
+        top: 3px;
+        background: var(--muted);
+        border-radius: 50%;
+        transition:
+          transform 0.2s,
+          background 0.2s;
+      }
+      .toggle input:checked + .slider {
+        background: rgba(0, 212, 255, 0.18);
+        border-color: var(--cyan);
+      }
+      .toggle input:checked + .slider::before {
+        transform: translateX(17px);
+        background: var(--cyan);
+      }
 
-  // ── Results ───────────────────────────────────────────────────────────────
-  function showResults() {
-    const sec = document.getElementById('results-section');
-    sec.style.display = 'block';
-    sec.classList.add('fade-in');
-    renderJobCards(window._top3 || []);
+      /* ── LLM Selector ───────────────────────────────── */
+      .llm-selector {
+        margin-top: 22px;
+      }
+      .llm-selector .card-title {
+        margin-bottom: 12px;
+      }
+      .llm-options {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .llm-option {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 14px;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        cursor: pointer;
+        transition:
+          border-color 0.2s,
+          background 0.2s;
+      }
+      .llm-option:hover {
+        border-color: var(--cyan);
+      }
+      .llm-option.selected {
+        border-color: var(--cyan);
+        background: rgba(0, 212, 255, 0.06);
+      }
+      .llm-option input[type="radio"] {
+        display: none;
+      }
+      .llm-icon {
+        font-size: 20px;
+        flex-shrink: 0;
+      }
+      .llm-name {
+        font-family: var(--font-h);
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .llm-desc {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 1px;
+      }
 
-    setText('orig-summary', document.getElementById('f-summary').value);
-    setText('orig-b1',      document.getElementById('f-b1').value);
-    setText('orig-b2',      document.getElementById('f-b2').value);
+      /* ── Drop zone ──────────────────────────────────── */
+      .drop-zone {
+        border: 2px dashed var(--border);
+        border-radius: 10px;
+        padding: 24px 18px;
+        text-align: center;
+        cursor: pointer;
+        transition:
+          border-color 0.2s,
+          background 0.2s;
+        background: var(--surface2);
+        position: relative;
+      }
+      .drop-zone.drag-over {
+        border-color: var(--cyan);
+        background: rgba(0, 212, 255, 0.04);
+      }
+      .drop-zone.has-file {
+        border-color: var(--success);
+        border-style: solid;
+      }
+      .drop-zone input[type="file"] {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+        width: 100%;
+        height: 100%;
+      }
+      .drop-icon {
+        font-size: 26px;
+        margin-bottom: 6px;
+      }
+      .drop-text {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .drop-text strong {
+        color: var(--cyan);
+      }
+      .drop-filename {
+        display: none;
+        font-family: var(--font-m);
+        font-size: 11px;
+        color: var(--success);
+        margin-top: 5px;
+      }
+      .has-file .drop-filename {
+        display: block;
+      }
+      .parse-status {
+        font-size: 11px;
+        font-family: var(--font-m);
+        margin-top: 6px;
+        color: var(--muted);
+        min-height: 16px;
+      }
 
-    if (lastTailored) {
-      setText('tail-summary', lastTailored.professional_summary);
-      setText('tail-b1',      lastTailored.bullet_1);
-      setText('tail-b2',      lastTailored.bullet_2);
-      document.getElementById('export-btn').disabled = !resumePDFb64;
-    }
-    sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
+      /* ── Run button ─────────────────────────────────── */
+      .run-btn {
+        width: 100%;
+        margin-top: 24px;
+        padding: 15px;
+        background: linear-gradient(135deg, var(--cyan) 0%, var(--violet) 100%);
+        color: #000;
+        font-family: var(--font-h);
+        font-size: 15px;
+        font-weight: 700;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        letter-spacing: 0.04em;
+        transition:
+          opacity 0.2s,
+          transform 0.1s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+      .run-btn:hover:not(:disabled) {
+        opacity: 0.9;
+        transform: translateY(-1px);
+      }
+      .run-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        transform: none;
+      }
+      .btn-spinner {
+        display: none;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(0, 0, 0, 0.3);
+        border-top-color: #000;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+      }
+      .loading .btn-spinner {
+        display: block;
+      }
 
-  function renderJobCards(top3) {
-    const c = document.getElementById('job-cards');
-    c.innerHTML = '';
-    top3.forEach((job, i) => {
-      const bd = job.score_breakdown || {};
-      const sp = p => ((p || 0) / (i === 0 ? 50 : i === 1 ? 30 : 20) * 100).toFixed(0);
-      const card = document.createElement('div');
-      card.className = `job-card rank-${i+1} fade-in`;
-      card.innerHTML = `
-        <div class="job-rank">#${i+1}</div>
+      /* ── Progress bar ───────────────────────────────── */
+      #progress-section {
+        display: none;
+        margin-top: 28px;
+      }
+      .progress-stages {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
+      .progress-stage {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--font-m);
+        font-size: 11px;
+        color: var(--muted);
+        transition: color 0.3s;
+      }
+      .progress-stage .stage-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--border);
+        border: 1px solid var(--muted);
+        transition:
+          background 0.3s,
+          border-color 0.3s;
+      }
+      .progress-stage.active {
+        color: var(--cyan);
+      }
+      .progress-stage.active .stage-dot {
+        background: var(--cyan);
+        border-color: var(--cyan);
+        box-shadow: 0 0 5px var(--cyan);
+      }
+      .progress-stage.done {
+        color: var(--success);
+      }
+      .progress-stage.done .stage-dot {
+        background: var(--success);
+        border-color: var(--success);
+      }
+      .progress-bar-bg {
+        width: 100%;
+        height: 6px;
+        background: var(--surface2);
+        border-radius: 3px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+      }
+      .progress-bar-fill {
+        height: 100%;
+        border-radius: 3px;
+        background: linear-gradient(90deg, var(--cyan), var(--violet));
+        width: 0%;
+        transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .progress-label {
+        font-family: var(--font-m);
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 8px;
+        min-height: 18px;
+        text-align: center;
+      }
+
+      /* ── Execution panel ────────────────────────────── */
+      #exec-section {
+        display: none;
+        margin-top: 28px;
+      }
+      .exec-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+      @media (max-width: 720px) {
+        .exec-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .terminal {
+        background: #050508;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .t-bar {
+        background: var(--surface2);
+        border-bottom: 1px solid var(--border);
+        padding: 8px 13px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .t-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+      }
+      .t-dot:nth-child(1) {
+        background: #ff5f57;
+      }
+      .t-dot:nth-child(2) {
+        background: #febc2e;
+      }
+      .t-dot:nth-child(3) {
+        background: #28c840;
+      }
+      .t-title {
+        margin-left: 8px;
+        font-family: var(--font-m);
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .t-body {
+        padding: 13px;
+        font-family: var(--font-m);
+        font-size: 12px;
+        line-height: 1.75;
+        height: 340px;
+        overflow-y: auto;
+        scroll-behavior: smooth;
+      }
+      .log-line {
+        margin-bottom: 1px;
+      }
+      .log-line.info {
+        color: #94a3b8;
+      }
+      .log-line.success {
+        color: var(--success);
+      }
+      .log-line.cyan {
+        color: var(--cyan);
+      }
+      .log-line.warn {
+        color: var(--warn);
+      }
+      .log-line.error {
+        color: var(--error);
+      }
+      .log-line.dim {
+        color: #383848;
+      }
+      .log-prompt {
+        color: var(--violet);
+      }
+
+      #live-results {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .step-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 13px 15px;
+        opacity: 0.4;
+        transition:
+          opacity 0.3s,
+          border-color 0.3s;
+      }
+      .step-card.active {
+        opacity: 1;
+        border-color: var(--cyan);
+      }
+      .step-card.done {
+        opacity: 1;
+        border-color: var(--success);
+      }
+      .step-lbl {
+        font-family: var(--font-m);
+        font-size: 11px;
+        color: var(--muted);
+        margin-bottom: 5px;
+        text-transform: uppercase;
+      }
+      .step-card.active .step-lbl {
+        color: var(--cyan);
+      }
+      .step-card.done .step-lbl {
+        color: var(--success);
+      }
+      .step-val {
+        font-size: 13px;
+      }
+
+      /* ── Results ────────────────────────────────────── */
+      #results-section {
+        display: none;
+        margin-top: 44px;
+      }
+      .section-title {
+        font-family: var(--font-h);
+        font-size: 21px;
+        font-weight: 700;
+        margin-bottom: 22px;
+      }
+      .section-title span {
+        color: var(--cyan);
+      }
+      .divider {
+        height: 1px;
+        background: var(--border);
+        margin: 36px 0;
+      }
+
+      .job-cards {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+        margin-bottom: 32px;
+      }
+      @media (max-width: 900px) {
+        .job-cards {
+          grid-template-columns: 1fr;
+        }
+      }
+      .job-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 18px;
+        position: relative;
+        transition:
+          border-color 0.2s,
+          transform 0.15s;
+      }
+      .job-card:hover {
+        border-color: var(--cyan);
+        transform: translateY(-2px);
+      }
+      .job-card.rank-1 {
+        border-color: var(--cyan);
+      }
+      .job-rank {
+        position: absolute;
+        top: 13px;
+        right: 13px;
+        font-family: var(--font-m);
+        font-size: 11px;
+        background: rgba(0, 212, 255, 0.1);
+        border: 1px solid rgba(0, 212, 255, 0.28);
+        color: var(--cyan);
+        padding: 2px 8px;
+        border-radius: 100px;
+      }
+      .job-card.rank-1 .job-rank {
+        background: linear-gradient(135deg, var(--cyan), var(--violet));
+        color: #000;
+        border-color: transparent;
+        font-weight: 700;
+      }
+      .job-ttl {
+        font-weight: 600;
+        font-size: 14px;
+        margin-bottom: 3px;
+        padding-right: 46px;
+      }
+      .job-co {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 13px;
+      }
+      .score-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 7px;
+      }
+      .score-lbl {
+        font-family: var(--font-m);
+        font-size: 10px;
+        color: var(--muted);
+        width: 36px;
+        flex-shrink: 0;
+      }
+      .score-bg {
+        flex: 1;
+        height: 5px;
+        background: var(--surface2);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .score-fill {
+        height: 100%;
+        border-radius: 3px;
+        background: linear-gradient(90deg, var(--cyan), var(--violet));
+        width: 0;
+        transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .score-num {
+        font-family: var(--font-m);
+        font-size: 10px;
+        color: var(--cyan);
+        width: 26px;
+        text-align: right;
+      }
+      .score-total {
+        font-family: var(--font-m);
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--cyan);
+        margin-top: 9px;
+      }
+      .job-link {
+        display: inline-block;
+        margin-top: 11px;
+        font-size: 11px;
+        color: var(--cyan);
+        text-decoration: none;
+        font-family: var(--font-m);
+        opacity: 0.65;
+        transition: opacity 0.2s;
+      }
+      .job-link:hover {
+        opacity: 1;
+      }
+
+      /* Resume diff */
+      .resume-diff {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+        margin-top: 20px;
+      }
+      @media (max-width: 720px) {
+        .resume-diff {
+          grid-template-columns: 1fr;
+        }
+      }
+      .diff-pane {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 18px;
+      }
+      .diff-pane.tailored {
+        border-color: var(--success);
+      }
+      .diff-pane-title {
+        font-family: var(--font-m);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        margin-bottom: 14px;
+      }
+      .diff-pane.original .diff-pane-title {
+        color: var(--muted);
+      }
+      .diff-pane.tailored .diff-pane-title {
+        color: var(--success);
+      }
+      .diff-sec-lbl {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 13px;
+        margin-bottom: 3px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .diff-text {
+        font-size: 13px;
+        line-height: 1.65;
+        color: var(--text);
+        word-break: break-word;
+        overflow-wrap: anywhere;
+      }
+      .diff-text.empty {
+        color: var(--muted);
+        font-style: italic;
+      }
+
+      .export-btn {
+        margin-top: 22px;
+        padding: 11px 26px;
+        background: transparent;
+        border: 1px solid var(--success);
+        color: var(--success);
+        font-family: var(--font-h);
+        font-size: 13px;
+        font-weight: 600;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .export-btn:hover:not(:disabled) {
+        background: rgba(16, 185, 129, 0.1);
+      }
+      .export-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      ::-webkit-scrollbar {
+        width: 5px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 3px;
+      }
+      .fade-in {
+        animation: fadeIn 0.4s ease;
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ── Header ──────────────────────────────────────────────────────────────── -->
+    <header>
+      <div class="container">
+        <div class="header-inner">
+          <div class="logo">
+            <svg
+              viewBox="0 0 52 52"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <polygon
+                class="logo-spin"
+                points="26,4 46,15 46,37 26,48 6,37 6,15"
+                stroke="#00d4ff"
+                stroke-width="1.5"
+                fill="none"
+                opacity=".4"
+              />
+              <polygon
+                points="26,10 41,18.5 41,33.5 26,42 11,33.5 11,18.5"
+                stroke="#7c3aed"
+                stroke-width="1.5"
+                fill="none"
+                opacity=".6"
+              />
+              <circle cx="26" cy="26" r="5" fill="url(#grd)" />
+              <defs>
+                <radialGradient id="grd" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="#00d4ff" />
+                  <stop offset="100%" stop-color="#7c3aed" />
+                </radialGradient>
+              </defs>
+            </svg>
+          </div>
+          <div class="header-text">
+            <h1>AI Job Search Agent</h1>
+            <p>ReAct · Local Qwen 3.5 4B · Zero data sharing</p>
+          </div>
+          <div class="status-pill">
+            <div class="status-dot" id="status-dot"></div>
+            <span id="status-label">Checking...</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <div class="container">
+        <!-- ── Form ─────────────────────────────────────────────────────────────── -->
+        <div class="grid-2" style="margin-top: 32px">
+          <!-- Left: Profile -->
+          <div class="card">
+            <div class="card-title">Candidate Profile</div>
+
+            <div class="field">
+              <label>Full Name</label>
+              <input type="text" id="f-name" placeholder="e.g. Jane Smith" />
+            </div>
+
+            <div class="field">
+              <label
+                >Skills
+                <span style="color: var(--muted)"
+                  >(Enter or comma to add)</span
+                ></label
+              >
+              <div class="tag-wrap" id="skills-wrap">
+                <input
+                  class="tag-input"
+                  id="skill-input"
+                  placeholder="e.g. Python"
+                />
+              </div>
+            </div>
+
+            <div class="grid-2" style="gap: 10px">
+              <div class="field">
+                <label>Years of Experience</label>
+                <input type="number" id="f-years" value="2" min="0" max="20" />
+              </div>
+              <div class="field">
+                <label>Preferred Location</label>
+                <input
+                  type="text"
+                  id="f-location"
+                  value="Remote"
+                  placeholder="Remote / San Francisco"
+                />
+              </div>
+            </div>
+
+            <div class="field">
+              <label
+                >Exclude Companies
+                <span style="color: var(--muted)">(Enter to add)</span></label
+              >
+              <div class="tag-wrap" id="excl-wrap">
+                <input
+                  class="tag-input"
+                  id="excl-input"
+                  placeholder="e.g. TikTok"
+                />
+              </div>
+            </div>
+
+            <div class="toggle-row">
+              <span>Remote Only</span>
+              <label class="toggle"
+                ><input type="checkbox" id="f-remote" /><span
+                  class="slider"
+                ></span
+              ></label>
+            </div>
+
+            <!-- LLM selector (inside left card) -->
+            <div class="llm-selector">
+              <div class="card-title">AI Provider</div>
+              <div class="llm-options">
+                <label
+                  class="llm-option selected"
+                  id="opt-llama"
+                  onclick="selectLLM('llama')"
+                >
+                  <input type="radio" name="llm" value="llama" checked />
+                  <div class="llm-icon">🖥</div>
+                  <div>
+                    <div class="llm-name">Qwen 3.5</div>
+                    <div class="llm-desc">Local · Ollama · 4B · Private</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Resume -->
+          <div class="card">
+            <div class="card-title">Resume</div>
+
+            <div class="drop-zone" id="drop-zone">
+              <input type="file" id="resume-file" accept=".pdf,.docx" />
+              <div class="drop-icon">📄</div>
+              <div class="drop-text">
+                <strong>Drop PDF or DOCX here</strong> or click to browse
+              </div>
+              <div class="drop-filename" id="drop-filename"></div>
+            </div>
+            <div class="parse-status" id="parse-status"></div>
+
+            <div class="field" style="margin-top: 14px">
+              <label
+                >Current Summary
+                <span style="color: var(--muted)"
+                  >(auto-filled from PDF if uploaded)</span
+                ></label
+              >
+              <textarea
+                id="f-summary"
+                rows="3"
+                placeholder="Data Science MS student with 2+ years of experience..."
+              ></textarea>
+            </div>
+            <div class="field">
+              <label>Bullet 1</label>
+              <textarea
+                id="f-b1"
+                rows="2"
+                placeholder="Developed automated ETL pipelines..."
+              ></textarea>
+            </div>
+            <div class="field">
+              <label>Bullet 2</label>
+              <textarea
+                id="f-b2"
+                rows="2"
+                placeholder="Built and deployed a sentiment analysis model..."
+              ></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Run button -->
+        <button class="run-btn" id="run-btn" onclick="runAgent()">
+          <span class="btn-spinner" id="btn-spinner"></span>
+          <span id="btn-label">⚡ Run Agent</span>
+        </button>
+
+        <!-- ── Progress bar ───────────────────────────────────────────────────────── -->
+        <section id="progress-section">
+          <div class="progress-stages">
+            <div class="progress-stage" id="ps-filter">
+              <div class="stage-dot"></div>
+              <span>① Filter Jobs</span>
+            </div>
+            <div class="progress-stage" id="ps-rank">
+              <div class="stage-dot"></div>
+              <span>② Rank &amp; Score</span>
+            </div>
+            <div class="progress-stage" id="ps-tailor">
+              <div class="stage-dot"></div>
+              <span>③ Tailor Resume</span>
+            </div>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="progress-fill"></div>
+          </div>
+          <div class="progress-label" id="progress-label">
+            Starting agent...
+          </div>
+        </section>
+
+        <!-- ── Execution panel ──────────────────────────────────────────────────── -->
+        <section id="exec-section" style="margin-top: 20px">
+          <div class="exec-grid">
+            <div class="terminal">
+              <div class="t-bar">
+                <div class="t-dot"></div>
+                <div class="t-dot"></div>
+                <div class="t-dot"></div>
+                <span class="t-title">agent · live trace</span>
+              </div>
+              <div class="t-body" id="t-body"></div>
+            </div>
+            <div id="live-results">
+              <div class="step-card" id="sc-filter">
+                <div class="step-lbl">① Filter</div>
+                <div class="step-val" id="sc-filter-val">Waiting...</div>
+              </div>
+              <div class="step-card" id="sc-rank">
+                <div class="step-lbl">② Rank</div>
+                <div class="step-val" id="sc-rank-val">Waiting...</div>
+              </div>
+              <div class="step-card" id="sc-tailor">
+                <div class="step-lbl">③ Tailor Resume</div>
+                <div class="step-val" id="sc-tailor-val">Waiting...</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Results ──────────────────────────────────────────────────────────── -->
+        <section id="results-section">
+          <div class="divider"></div>
+          <div class="section-title">Top <span>3</span> Matches</div>
+          <div class="job-cards" id="job-cards"></div>
+
+          <div class="section-title" style="margin-top: 8px">
+            Resume <span>Comparison</span>
+          </div>
+          <div class="resume-diff">
+            <div class="diff-pane original">
+              <div class="diff-pane-title">Original Resume</div>
+              <div class="diff-sec-lbl">Summary</div>
+              <div class="diff-text" id="orig-summary">—</div>
+              <div class="diff-sec-lbl">Bullet 1</div>
+              <div class="diff-text" id="orig-b1">—</div>
+              <div class="diff-sec-lbl">Bullet 2</div>
+              <div class="diff-text" id="orig-b2">—</div>
+            </div>
+            <div class="diff-pane tailored">
+              <div class="diff-pane-title">✦ Tailored Resume</div>
+              <div class="diff-sec-lbl">Summary</div>
+              <div class="diff-text" id="tail-summary">—</div>
+              <div class="diff-sec-lbl">Bullet 1</div>
+              <div class="diff-text" id="tail-b1">—</div>
+              <div class="diff-sec-lbl">Bullet 2</div>
+              <div class="diff-text" id="tail-b2">—</div>
+            </div>
+          </div>
+          <button
+            class="export-btn"
+            id="export-btn"
+            onclick="exportPDF()"
+            disabled
+          >
+            ⬇ Export Tailored PDF
+          </button>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      const API = "http://localhost:8000";
+      let skillTags = [
+        "Python",
+        "SQL",
+        "R",
+        "Machine Learning",
+        "Deep Learning",
+        "PyTorch",
+        "TensorFlow",
+        "NLP",
+        "Transformers",
+        "Databricks",
+        "Airflow",
+        "dbt",
+        "PostgreSQL",
+        "MongoDB",
+        "Docker",
+        "AWS",
+        "Power BI",
+        "Spark",
+        "MLflow",
+        "Pandas",
+      ];
+      let exclTags = [];
+      let resumeFileB64 = "";
+      let resumeFileType = ""; // "pdf" or "docx"
+      let lastTailored = null;
+      let lastBestJob = null;
+      let selectedLLM = "llama";
+
+      // ── Init ──────────────────────────────────────────────────────────────────
+      document.addEventListener("DOMContentLoaded", () => {
+        checkHealth();
+        renderTags("skills-wrap", "skill-input", skillTags, () =>
+          renderTags("skills-wrap", "skill-input", skillTags),
+        );
+        renderTags("excl-wrap", "excl-input", exclTags, () =>
+          renderTags("excl-wrap", "excl-input", exclTags),
+        );
+        setupTagInput("skill-input", skillTags, () =>
+          renderTags("skills-wrap", "skill-input", skillTags),
+        );
+        setupTagInput("excl-input", exclTags, () =>
+          renderTags("excl-wrap", "excl-input", exclTags),
+        );
+        setupDropZone();
+      });
+
+      // ── Health ────────────────────────────────────────────────────────────────
+      async function checkHealth() {
+        const dot = document.getElementById("status-dot");
+        const lbl = document.getElementById("status-label");
+        try {
+          const res = await fetch(`${API}/health`, {
+            signal: AbortSignal.timeout(4000),
+          });
+          const data = await res.json();
+          dot.className = data.ollama_connected
+            ? "status-dot ok"
+            : "status-dot fail";
+          lbl.textContent = data.ollama_connected
+            ? "Ollama connected"
+            : "Ollama offline";
+        } catch {
+          dot.className = "status-dot fail";
+          lbl.textContent = "API offline";
+        }
+      }
+
+      // ── LLM selector ─────────────────────────────────────────────────────────
+      function selectLLM(provider) {
+        selectedLLM = provider;
+        document
+          .getElementById("opt-llama")
+          .classList.toggle("selected", provider === "llama");
+        checkHealth();
+      }
+
+      // ── Tag inputs ────────────────────────────────────────────────────────────
+      function setupTagInput(inputId, arr, renderFn) {
+        const input = document.getElementById(inputId);
+        input.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === ",") {
+            e.preventDefault();
+            const val = input.value.trim().replace(/,$/, "");
+            if (val && !arr.includes(val)) {
+              arr.push(val);
+              renderFn();
+            }
+            input.value = "";
+          } else if (
+            e.key === "Backspace" &&
+            input.value === "" &&
+            arr.length
+          ) {
+            arr.pop();
+            renderFn();
+          }
+        });
+      }
+
+      function renderTags(wrapId, inputId, arr, renderFn) {
+        const wrap = document.getElementById(wrapId);
+        const input = document.getElementById(inputId);
+        wrap.querySelectorAll(".tag").forEach((t) => t.remove());
+        arr.forEach((s, i) => {
+          const span = document.createElement("span");
+          span.className = "tag";
+          span.innerHTML = `${esc(s)}<button class="tag-x" title="Remove">×</button>`;
+          span.querySelector(".tag-x").addEventListener("click", (e) => {
+            e.stopPropagation();
+            arr.splice(i, 1);
+            renderTags(wrapId, inputId, arr, renderFn);
+          });
+          wrap.insertBefore(span, input);
+        });
+        wrap.addEventListener("click", () => input.focus());
+      }
+
+      // ── Drop zone ─────────────────────────────────────────────────────────────
+      function setupDropZone() {
+        const zone = document.getElementById("drop-zone");
+        const input = document.getElementById("resume-file");
+        zone.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          zone.classList.add("drag-over");
+        });
+        zone.addEventListener("dragleave", () =>
+          zone.classList.remove("drag-over"),
+        );
+        zone.addEventListener("drop", (e) => {
+          e.preventDefault();
+          zone.classList.remove("drag-over");
+          if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+        });
+        input.addEventListener("change", () => {
+          if (input.files[0]) handleFile(input.files[0]);
+        });
+      }
+
+      async function handleFile(file) {
+        const isPDF = file.name.toLowerCase().endsWith(".pdf");
+        const isDOCX = file.name.toLowerCase().endsWith(".docx");
+        if (!isPDF && !isDOCX) {
+          alert("Please upload a PDF or DOCX file.");
+          return;
+        }
+        const zone = document.getElementById("drop-zone");
+        zone.classList.add("has-file");
+        document.getElementById("drop-filename").textContent = file.name;
+        resumeFileB64 = await fileToBase64(file);
+        resumeFileType = isPDF ? "pdf" : "docx";
+
+        const status = document.getElementById("parse-status");
+        status.style.color = "var(--muted)";
+        status.textContent = `⏳ Parsing ${resumeFileType.toUpperCase()}...`;
+
+        // Only parse PDF for text extraction (DOCX export uses docx endpoint)
+        if (isPDF) {
+          const form = new FormData();
+          form.append("file", file);
+          try {
+            const res = await fetch(`${API}/parse-resume`, {
+              method: "POST",
+              body: form,
+            });
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+            if (data.summary && !document.getElementById("f-summary").value)
+              document.getElementById("f-summary").value = data.summary;
+            if (data.bullet_1 && !document.getElementById("f-b1").value)
+              document.getElementById("f-b1").value = data.bullet_1;
+            if (data.bullet_2 && !document.getElementById("f-b2").value)
+              document.getElementById("f-b2").value = data.bullet_2;
+            status.style.color = "var(--success)";
+            status.textContent = `✓ Extracted ${data.pages} page(s) — fields auto-filled below`;
+          } catch (err) {
+            status.style.color = "var(--error)";
+            status.textContent = "✗ Parse failed — fill fields manually";
+          }
+        } else {
+          status.style.color = "var(--success)";
+          status.textContent = "✓ DOCX loaded — fill summary & bullets below, then run agent";
+        }
+      }
+
+      // ── Progress helpers ──────────────────────────────────────────────────────
+      function setProgress(pct, label) {
+        document.getElementById("progress-fill").style.width = pct + "%";
+        document.getElementById("progress-label").textContent = label;
+      }
+      function stageActive(id) {
+        document.getElementById(id).className = "progress-stage active";
+      }
+      function stageDone(id) {
+        document.getElementById(id).className = "progress-stage done";
+      }
+
+      // ── Run agent ─────────────────────────────────────────────────────────────
+      async function runAgent() {
+        const btn = document.getElementById("run-btn");
+        const lbl = document.getElementById("btn-label");
+        btn.disabled = true;
+        btn.classList.add("loading");
+        lbl.textContent = "Running...";
+
+        // Show panels
+        document.getElementById("progress-section").style.display = "block";
+        document.getElementById("exec-section").style.display = "block";
+        document.getElementById("results-section").style.display = "none";
+
+        // Reset
+        setProgress(4, "Starting agent...");
+        ["ps-filter", "ps-rank", "ps-tailor"].forEach(
+          (id) => (document.getElementById(id).className = "progress-stage"),
+        );
+        ["sc-filter", "sc-rank", "sc-tailor"].forEach(
+          (id) => (document.getElementById(id).className = "step-card"),
+        );
+        document.getElementById("sc-filter-val").textContent = "Waiting...";
+        document.getElementById("sc-rank-val").textContent = "Waiting...";
+        document.getElementById("sc-tailor-val").textContent = "Waiting...";
+        document.getElementById("t-body").innerHTML = "";
+
+        log(`▶ Agent started · Qwen 3.5 4B (Ollama)`, "cyan");
+
+        const payload = {
+          name: document.getElementById("f-name").value || "Candidate",
+          skills: skillTags,
+          years_experience:
+            parseInt(document.getElementById("f-years").value) || 2,
+          preferred_location:
+            document.getElementById("f-location").value || "Remote",
+          remote_only: document.getElementById("f-remote").checked,
+          exclude_companies: exclTags,
+          current_summary: document.getElementById("f-summary").value,
+          bullet_1: document.getElementById("f-b1").value,
+          bullet_2: document.getElementById("f-b2").value,
+          resume_pdf_base64: resumeFileType === "pdf" ? resumeFileB64 : "",
+        };
+
+        try {
+          const res = await fetch(`${API}/run-agent`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const reader = res.body.getReader();
+          const dec = new TextDecoder();
+          let buf = "";
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            const lines = buf.split("\n");
+            buf = lines.pop();
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                try {
+                  handleSSE(JSON.parse(line.slice(6)));
+                } catch {}
+              }
+            }
+          }
+        } catch (err) {
+          log(`Connection error: ${err.message}`, "error");
+          setProgress(0, "Error — see terminal");
+        }
+
+        btn.disabled = false;
+        btn.classList.remove("loading");
+        lbl.textContent = "⚡ Run Again";
+      }
+
+      // ── SSE handler ───────────────────────────────────────────────────────────
+      function handleSSE(ev) {
+        switch (ev.type) {
+          case "status":
+            log(ev.message, "info");
+            setProgress(5, ev.message);
+            break;
+
+          case "filter_start":
+            stageActive("ps-filter");
+            setProgress(10, ev.message);
+            log("⚙ " + ev.message, "cyan");
+            document.getElementById("sc-filter").classList.add("active");
+            break;
+
+          case "filter_result":
+            stageDone("ps-filter");
+            setProgress(33, `Filter complete — ${ev.count} jobs matched`);
+            (ev.trace || []).forEach((t) => log("  " + t, "dim"));
+            log(`✓ ${ev.count} jobs passed filters`, "success");
+            document
+              .getElementById("sc-filter")
+              .classList.replace("active", "done");
+            document.getElementById("sc-filter-val").textContent =
+              `${ev.count} jobs matched`;
+            stageActive("ps-rank");
+            document.getElementById("sc-rank").classList.add("active");
+            document.getElementById("sc-rank-val").textContent = "Running...";
+            break;
+
+          case "rank_start":
+            setProgress(38, ev.message);
+            log("⚙ " + ev.message, "cyan");
+            break;
+
+          case "rank_result": {
+            const top3 = ev.top_3 || [];
+            stageDone("ps-rank");
+            setProgress(
+              66,
+              `Ranking complete — #1 is ${top3[0]?.job_title ?? "?"}`,
+            );
+            log(
+              `✓ Top pick: ${top3[0]?.job_title} @ ${top3[0]?.company}`,
+              "success",
+            );
+            document
+              .getElementById("sc-rank")
+              .classList.replace("active", "done");
+            document.getElementById("sc-rank-val").textContent = top3
+              .map((j, i) => `#${i + 1} ${j.job_title}`)
+              .join(" · ");
+            stageActive("ps-tailor");
+            document.getElementById("sc-tailor").classList.add("active");
+            document.getElementById("sc-tailor-val").textContent = "Running...";
+            window._top3 = top3;
+            lastBestJob = top3[0] || null;
+            break;
+          }
+
+          case "tailor_start":
+            setProgress(70, ev.message);
+            log("⚙ " + ev.message, "cyan");
+            break;
+
+          case "tailor_result":
+            stageDone("ps-tailor");
+            setProgress(100, `Done — resume tailored for ${ev.job_title}`);
+            log(
+              `✓ Resume tailored for ${ev.job_title} @ ${ev.company}`,
+              "success",
+            );
+            document
+              .getElementById("sc-tailor")
+              .classList.replace("active", "done");
+            document.getElementById("sc-tailor-val").textContent = ev.job_title;
+            lastTailored = ev;
+            break;
+
+          case "error":
+            log("✗ " + ev.message, "error");
+            setProgress(
+              document.getElementById("progress-fill").style.width || 0,
+              "⚠ Error — " + ev.message.slice(0, 60),
+            );
+            break;
+
+          case "complete":
+            log("✔ " + ev.message, "success");
+            if (lastTailored || window._top3?.length) showResults();
+            break;
+        }
+      }
+
+      // ── Results ───────────────────────────────────────────────────────────────
+      function showResults() {
+        const sec = document.getElementById("results-section");
+        sec.style.display = "block";
+        sec.classList.add("fade-in");
+        renderJobCards(window._top3 || []);
+
+        setText("orig-summary", document.getElementById("f-summary").value);
+        setText("orig-b1", document.getElementById("f-b1").value);
+        setText("orig-b2", document.getElementById("f-b2").value);
+
+        if (lastTailored) {
+          setText("tail-summary", lastTailored.professional_summary);
+          setText("tail-b1", lastTailored.bullet_1);
+          setText("tail-b2", lastTailored.bullet_2);
+          document.getElementById("export-btn").disabled = !resumeFileB64;
+          document.getElementById("export-btn").textContent =
+            resumeFileType === "docx" ? "⬇ Export Tailored DOCX" : "⬇ Export Tailored PDF";
+        }
+        sec.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      function renderJobCards(top3) {
+        const c = document.getElementById("job-cards");
+        c.innerHTML = "";
+        top3.forEach((job, i) => {
+          const bd = job.score_breakdown || {};
+          const sp = (p) =>
+            (((p || 0) / (i === 0 ? 50 : i === 1 ? 30 : 20)) * 100).toFixed(0);
+          const card = document.createElement("div");
+          card.className = `job-card rank-${i + 1} fade-in`;
+          card.innerHTML = `
+        <div class="job-rank">#${i + 1}</div>
         <div class="job-ttl">${esc(job.job_title)}</div>
         <div class="job-co">${esc(job.company)} · ${esc(job.location)}</div>
-        <div class="score-row"><div class="score-lbl">Skill</div><div class="score-bg"><div class="score-fill" data-pct="${((bd.skill_match||0)/50*100).toFixed(0)}"></div></div><div class="score-num">${bd.skill_match??'—'}</div></div>
-        <div class="score-row"><div class="score-lbl">Exp</div><div class="score-bg"><div class="score-fill" data-pct="${((bd.experience_fit||0)/30*100).toFixed(0)}"></div></div><div class="score-num">${bd.experience_fit??'—'}</div></div>
-        <div class="score-row"><div class="score-lbl">Loc</div><div class="score-bg"><div class="score-fill" data-pct="${((bd.location_match||0)/20*100).toFixed(0)}"></div></div><div class="score-num">${bd.location_match??'—'}</div></div>
+        <div class="score-row"><div class="score-lbl">Skill</div><div class="score-bg"><div class="score-fill" data-pct="${(((bd.skill_match || 0) / 50) * 100).toFixed(0)}"></div></div><div class="score-num">${bd.skill_match ?? "—"}</div></div>
+        <div class="score-row"><div class="score-lbl">Exp</div><div class="score-bg"><div class="score-fill" data-pct="${(((bd.experience_fit || 0) / 30) * 100).toFixed(0)}"></div></div><div class="score-num">${bd.experience_fit ?? "—"}</div></div>
+        <div class="score-row"><div class="score-lbl">Loc</div><div class="score-bg"><div class="score-fill" data-pct="${(((bd.location_match || 0) / 20) * 100).toFixed(0)}"></div></div><div class="score-num">${bd.location_match ?? "—"}</div></div>
         <div class="score-total">${job.score}/100</div>
-        ${job.url ? `<a class="job-link" href="${esc(job.url)}" target="_blank" rel="noopener">↗ View on LinkedIn</a>` : ''}
+        ${job.url ? `<a class="job-link" href="${esc(job.url)}" target="_blank" rel="noopener">↗ View on LinkedIn</a>` : ""}
       `;
-      c.appendChild(card);
-    });
-    requestAnimationFrame(() => {
-      document.querySelectorAll('.score-fill').forEach(b => { b.style.width = b.dataset.pct + '%'; });
-    });
-  }
+          c.appendChild(card);
+        });
+        requestAnimationFrame(() => {
+          document.querySelectorAll(".score-fill").forEach((b) => {
+            b.style.width = b.dataset.pct + "%";
+          });
+        });
+      }
 
-  // ── Export PDF ────────────────────────────────────────────────────────────
-  async function exportPDF() {
-    if (!resumePDFb64 || !lastTailored || !lastBestJob) return;
-    const btn = document.getElementById('export-btn');
-    btn.disabled = true; btn.textContent = '⏳ Generating...';
-    try {
-      const res = await fetch(`${API}/export-resume`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          original_pdf_base64: resumePDFb64,
-          tailored_summary:    lastTailored.professional_summary || '',
-          tailored_bullet_1:   lastTailored.bullet_1 || '',
-          tailored_bullet_2:   lastTailored.bullet_2 || '',
-          job_title:           lastBestJob.job_title || 'Job',
-          company:             lastBestJob.company   || 'Company',
-        }),
-      });
-      if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Export failed'); }
-      const blob = await res.blob();
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      const cd   = res.headers.get('Content-Disposition') || '';
-      a.href = url; a.download = cd.match(/filename="(.+?)"/)?.[1] || 'tailored_resume.pdf';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      log('✓ PDF downloaded', 'success');
-    } catch (err) {
-      log(`Export error: ${err.message}`, 'error');
-      alert(`Export failed: ${err.message}`);
-    }
-    btn.disabled = false; btn.textContent = '⬇ Export Tailored PDF';
-  }
+      // ── Export Resume (PDF or DOCX) ───────────────────────────────────────────
+      async function exportPDF() {
+        if (!resumeFileB64 || !lastTailored || !lastBestJob) return;
+        const btn = document.getElementById("export-btn");
+        btn.disabled = true;
+        btn.textContent = "⏳ Generating...";
+        const isDocx = resumeFileType === "docx";
+        try {
+          let endpoint, body, defaultFilename;
+          if (isDocx) {
+            endpoint = `${API}/export-resume-docx`;
+            body = JSON.stringify({
+              original_docx_base64: resumeFileB64,
+              tailored_summary: lastTailored.professional_summary || "",
+              tailored_bullet_1: lastTailored.bullet_1 || "",
+              tailored_bullet_2: lastTailored.bullet_2 || "",
+              original_summary: document.getElementById("f-summary").value || "",
+              original_bullet_1: document.getElementById("f-b1").value || "",
+              original_bullet_2: document.getElementById("f-b2").value || "",
+              job_title: lastBestJob.job_title || "Job",
+              company: lastBestJob.company || "Company",
+            });
+            defaultFilename = "tailored_resume.docx";
+          } else {
+            endpoint = `${API}/export-resume`;
+            body = JSON.stringify({
+              original_pdf_base64: resumeFileB64,
+              tailored_summary: lastTailored.professional_summary || "",
+              tailored_bullet_1: lastTailored.bullet_1 || "",
+              tailored_bullet_2: lastTailored.bullet_2 || "",
+              job_title: lastBestJob.job_title || "Job",
+              company: lastBestJob.company || "Company",
+            });
+            defaultFilename = "tailored_resume.pdf";
+          }
+          const res = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body,
+          });
+          if (!res.ok) {
+            const e = await res.json();
+            throw new Error(e.detail || "Export failed");
+          }
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          const cd = res.headers.get("Content-Disposition") || "";
+          a.href = url;
+          a.download = cd.match(/filename="(.+?)"/)?.[1] || defaultFilename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          log(`✓ ${isDocx ? "DOCX" : "PDF"} downloaded`, "success");
+        } catch (err) {
+          log(`Export error: ${err.message}`, "error");
+          alert(`Export failed: ${err.message}`);
+        }
+        btn.disabled = false;
+        btn.textContent = isDocx ? "⬇ Export Tailored DOCX" : "⬇ Export Tailored PDF";
+      }
 
-  // ── Utils ─────────────────────────────────────────────────────────────────
-  function log(msg, cls = 'info') {
-    const body = document.getElementById('t-body');
-    const line = document.createElement('div');
-    line.className = `log-line ${cls}`;
-    line.innerHTML = `<span class="log-prompt">❯ </span>${esc(msg)}`;
-    body.appendChild(line); body.scrollTop = body.scrollHeight;
-  }
-  function setText(id, val) {
-    const el = document.getElementById(id);
-    if (!val) { el.textContent = '—'; el.classList.add('empty'); }
-    else       { el.textContent = val; el.classList.remove('empty'); }
-  }
-  function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-  function fileToBase64(file) {
-    return new Promise((res, rej) => {
-      const r = new FileReader();
-      r.onload  = () => res(r.result.split(',')[1]);
-      r.onerror = rej;
-      r.readAsDataURL(file);
-    });
-  }
-</script>
-</body>
+      // ── Utils ─────────────────────────────────────────────────────────────────
+      function log(msg, cls = "info") {
+        const body = document.getElementById("t-body");
+        const line = document.createElement("div");
+        line.className = `log-line ${cls}`;
+        line.innerHTML = `<span class="log-prompt">❯ </span>${esc(msg)}`;
+        body.appendChild(line);
+        body.scrollTop = body.scrollHeight;
+      }
+      function setText(id, val) {
+        const el = document.getElementById(id);
+        if (!val) {
+          el.textContent = "—";
+          el.classList.add("empty");
+        } else {
+          el.textContent = val;
+          el.classList.remove("empty");
+        }
+      }
+      function esc(s) {
+        return String(s ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+      function fileToBase64(file) {
+        return new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(r.result.split(",")[1]);
+          r.onerror = rej;
+          r.readAsDataURL(file);
+        });
+      }
+    </script>
+  </body>
 </html>

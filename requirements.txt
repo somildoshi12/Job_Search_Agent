@@ -13,8 +13,8 @@ pypdf>=4.2.0
 # ── PDF export ────────────────────────────────────────────────────────────────
 reportlab>=4.2.0
 
-# ── Gemini LLM (cloud alternative) ───────────────────────────────────────────
-google-genai>=1.0.0
+# ── DOCX export (in-place formatting-safe edit) ───────────────────────────────
+python-docx>=1.1.0
 
 # ── Environment variables ─────────────────────────────────────────────────────
 python-dotenv>=1.0.0
