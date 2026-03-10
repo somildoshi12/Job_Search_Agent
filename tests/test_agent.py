@@ -190,7 +190,7 @@ class TestRankingTool:
 class TestDatasetIntegrity:
 
     def test_dataset_integrity(self):
-        """Test 9: CSV has 25 rows, 7 required columns, numeric years, no empty titles/companies."""
+        """Test 9: CSV has 40 rows, 7 required columns, numeric years, no empty titles/companies."""
         required_columns = {
             "job_title", "company", "location", "required_skills",
             "years_experience", "job_description", "url",
@@ -205,7 +205,7 @@ class TestDatasetIntegrity:
             for row in reader:
                 rows.append(row)
 
-        assert len(rows) == 25, f"Expected 25 job rows, got {len(rows)}"
+        assert len(rows) == 40, f"Expected 40 job rows, got {len(rows)}"
 
         for row in rows:
             assert row["job_title"].strip(), f"Empty job_title found: {row}"

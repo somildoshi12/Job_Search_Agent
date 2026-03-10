@@ -1331,32 +1331,27 @@
         status.style.color = "var(--muted)";
         status.textContent = `⏳ Parsing ${resumeFileType.toUpperCase()}...`;
 
-        // Only parse PDF for text extraction (DOCX export uses docx endpoint)
-        if (isPDF) {
-          const form = new FormData();
-          form.append("file", file);
-          try {
-            const res = await fetch(`${API}/parse-resume`, {
-              method: "POST",
-              body: form,
-            });
-            if (!res.ok) throw new Error(await res.text());
-            const data = await res.json();
-            if (data.summary && !document.getElementById("f-summary").value)
-              document.getElementById("f-summary").value = data.summary;
-            if (data.bullet_1 && !document.getElementById("f-b1").value)
-              document.getElementById("f-b1").value = data.bullet_1;
-            if (data.bullet_2 && !document.getElementById("f-b2").value)
-              document.getElementById("f-b2").value = data.bullet_2;
-            status.style.color = "var(--success)";
-            status.textContent = `✓ Extracted ${data.pages} page(s) — fields auto-filled below`;
-          } catch (err) {
-            status.style.color = "var(--error)";
-            status.textContent = "✗ Parse failed — fill fields manually";
-          }
-        } else {
+        // Parse PDF and DOCX for text extraction to auto-fill input fields
+        const form = new FormData();
+        form.append("file", file);
+        try {
+          const res = await fetch(`${API}/parse-resume`, {
+            method: "POST",
+            body: form,
+          });
+          if (!res.ok) throw new Error(await res.text());
+          const data = await res.json();
+          if (data.summary && !document.getElementById("f-summary").value)
+            document.getElementById("f-summary").value = data.summary;
+          if (data.bullet_1 && !document.getElementById("f-b1").value)
+            document.getElementById("f-b1").value = data.bullet_1;
+          if (data.bullet_2 && !document.getElementById("f-b2").value)
+            document.getElementById("f-b2").value = data.bullet_2;
           status.style.color = "var(--success)";
-          status.textContent = "✓ DOCX loaded — fill summary & bullets below, then run agent";
+          status.textContent = `✓ Extracted ${data.pages} page(s) — fields auto-filled below`;
+        } catch (err) {
+          status.style.color = "var(--error)";
+          status.textContent = "✗ Parse failed — fill fields manually";
         }
       }
 
@@ -1581,7 +1576,7 @@
         <div class="score-row"><div class="score-lbl">Exp</div><div class="score-bg"><div class="score-fill" data-pct="${(((bd.experience_fit || 0) / 30) * 100).toFixed(0)}"></div></div><div class="score-num">${bd.experience_fit ?? "—"}</div></div>
         <div class="score-row"><div class="score-lbl">Loc</div><div class="score-bg"><div class="score-fill" data-pct="${(((bd.location_match || 0) / 20) * 100).toFixed(0)}"></div></div><div class="score-num">${bd.location_match ?? "—"}</div></div>
         <div class="score-total">${job.score}/100</div>
-        ${job.url ? `<a class="job-link" href="${esc(job.url)}" target="_blank" rel="noopener">↗ View on LinkedIn</a>` : ""}
+        ${job.url && job.url.startsWith("http") ? `<a class="job-link" href="${esc(job.url)}" target="_blank" rel="noopener">↗ View on LinkedIn</a>` : ""}
       `;
           c.appendChild(card);
         });
@@ -1622,6 +1617,9 @@
               tailored_summary: lastTailored.professional_summary || "",
               tailored_bullet_1: lastTailored.bullet_1 || "",
               tailored_bullet_2: lastTailored.bullet_2 || "",
+              original_summary: document.getElementById("f-summary").value || "",
+              original_bullet_1: document.getElementById("f-b1").value || "",
+              original_bullet_2: document.getElementById("f-b2").value || "",
               job_title: lastBestJob.job_title || "Job",
               company: lastBestJob.company || "Company",
             });

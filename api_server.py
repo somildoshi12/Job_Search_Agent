@@ -89,6 +89,9 @@ class ExportResumeRequest(BaseModel):
     tailored_summary: str
     tailored_bullet_1: str
     tailored_bullet_2: str
+    original_summary: str = ""
+    original_bullet_1: str = ""
+    original_bullet_2: str = ""
     job_title: str = "Job"
     company: str = "Company"
 
@@ -113,12 +116,20 @@ def _check_ollama() -> bool:
 # GET /health
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _get_git_version() -> str:
+    try:
+        import subprocess
+        return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode("utf-8").strip()
+    except Exception:
+        return "unknown"
+
 @app.get("/health")
 def health():
     return {
         "status": "ok",
         "model": MODEL_NAME,
         "ollama_connected": _check_ollama(),
+        "version": _get_git_version(),
     }
 
 
@@ -379,7 +390,7 @@ def _extract_resume_sections(text: str) -> dict:
         if section_header.match(stripped) and len(stripped.split()) <= 5:
             return True
         # Title-case known section words
-        if re.match(r"^(Experience|Education|Skills|Projects|Certifications|Awards|Languages)\b", stripped):
+        if re.match(r"^(Professional\s+Experience|Experience|Education|Skills|Technical\s+Skills|Projects|Certifications|Awards|Languages)\b", stripped):
             return True
         return False
 
@@ -413,7 +424,7 @@ def _extract_resume_sections(text: str) -> dict:
                 # Don't skip — process as normal line below
             elif contact_pattern.search(line):
                 pass  # skip contact lines inside summary zone
-            elif date_pattern.search(line) and len(line.split()) <= 6:
+            elif date_pattern.search(line) and len(line.replace("\t", " ").split()) <= 8:
                 # Looks like "University of Houston  Mar 2025 – Dec 2025" — stop
                 if summary_buf:
                     candidate = " ".join(summary_buf)
@@ -433,8 +444,20 @@ def _extract_resume_sections(text: str) -> dict:
         # Collect bullets regardless of section
         if bullet_markers.match(line):
             clean = bullet_markers.sub("", line).strip()
-            if len(clean.split()) >= 6 and not contact_pattern.search(clean):
+            if len(clean.split()) >= 4 and not contact_pattern.search(clean):
                 bullets.append(clean)
+        elif bullets and line:
+            # If line doesn't match bullet marker, section header, date, or contact...
+            # it might be the continuation of the previous bullet point
+            stripped = line.strip()
+            if (
+                not _is_section_boundary(stripped)
+                and not contact_pattern.search(stripped)
+                and not date_pattern.search(stripped)
+                and not summary_headers.match(stripped)
+                and len(stripped.split()) >= 2
+            ):
+                bullets[-1] = bullets[-1] + " " + stripped
 
     # Flush summary if file ended while still collecting
     if in_summary and summary_buf and not summary:
@@ -476,16 +499,61 @@ def _extract_resume_sections(text: str) -> dict:
     }
 
 
+def _extract_text_from_docx(content: bytes) -> tuple[str, int]:
+    try:
+        import docx
+    except ImportError:
+        raise HTTPException(status_code=500, detail="Install python-docx: pip install python-docx")
+
+    doc = docx.Document(io.BytesIO(content))
+
+    # Styles that represent bullet/list items — prepend "• " so the
+    # bullet detection regex in _extract_resume_sections can find them.
+    LIST_STYLES = {"list paragraph", "list bullet", "list bullet 2",
+                   "list number", "list continue"}
+
+    seen: set[str] = set()
+    lines: list[str] = []
+
+    def _add(p):
+        t = p.text.strip()
+        if not t:
+            return
+        style_name = (p.style.name or "").lower()
+        # Prepend bullet marker if the paragraph is a list style AND doesn't
+        # already start with a bullet character
+        if style_name in LIST_STYLES and not re.match(r'^[•\-–\*·▪➢➤►▸◆]', t):
+            t = "• " + t
+        if t not in seen:
+            seen.add(t)
+            lines.append(t)
+
+    for p in doc.paragraphs:
+        _add(p)
+
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for p in cell.paragraphs:
+                    _add(p)
+
+    return "\n".join(lines), 1
+
+
 @app.post("/parse-resume")
 async def parse_resume(file: UploadFile = File(...)):
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
+    if not file.filename or not (file.filename.lower().endswith(".pdf") or file.filename.lower().endswith(".docx")):
+        raise HTTPException(status_code=400, detail="Only PDF and DOCX files are accepted.")
 
     content = await file.read()
-    text, pages = _extract_text_from_pdf(content)
+    
+    if file.filename.lower().endswith(".pdf"):
+        text, pages = _extract_text_from_pdf(content)
+    else:
+        text, pages = _extract_text_from_docx(content)
 
     if not text.strip():
-        raise HTTPException(status_code=422, detail="Could not extract text from PDF.")
+        raise HTTPException(status_code=422, detail="Could not extract text from document.")
 
     sections = _extract_resume_sections(text)
     return {**sections, "pages": pages}
@@ -497,6 +565,9 @@ async def parse_resume(file: UploadFile = File(...)):
 
 def _build_tailored_pdf(
     original_pdf_bytes: bytes,
+    original_summary: str,
+    original_bullet_1: str,
+    original_bullet_2: str,
     tailored_summary: str,
     tailored_bullet_1: str,
     tailored_bullet_2: str,
@@ -504,160 +575,418 @@ def _build_tailored_pdf(
     company: str,
 ) -> bytes:
     """
-    Overlay tailored text on the original PDF.
+    Overlay approach: use pdfplumber to locate the bounding boxes of the
+    original text regions, then use reportlab to draw white rectangles over
+    them and render the new text in the same position/font size. Finally merge
+    the overlay onto the original page with pypdf.
 
-    For each replacement (old → new):
-    1. Use pdfplumber to find the exact bounding box of every word in old_text
-    2. Draw a white rectangle covering the entire old block (with padding)
-    3. Render new_text at the same position using the same font-size as the
-       original, word-wrapped to the same column width — so layout is preserved
-    4. Merge the transparent overlay onto each original page via pypdf
+    This works for any PDF encoding (TJ arrays, kerned text, etc.) because we
+    never touch the content streams — we only add an overlay on top.
     """
     try:
+        import pdfplumber
         import pypdf
         from reportlab.pdfgen import canvas as rl_canvas
-    except ImportError:
-        raise HTTPException(status_code=500, detail="Install reportlab and pypdf: pip install reportlab pypdf")
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+    except ImportError as e:
+        raise HTTPException(status_code=500, detail=f"Missing dependency: {e}")
 
-    try:
-        import pdfplumber
-    except ImportError:
-        raise HTTPException(status_code=500, detail="Install pdfplumber: pip install pdfplumber")
+    replacements: list[tuple[str, str]] = []
+    if original_summary and tailored_summary:
+        replacements.append((original_summary.strip(), tailored_summary.strip()))
+    if original_bullet_1 and tailored_bullet_1:
+        replacements.append((original_bullet_1.strip(), tailored_bullet_1.strip()))
+    if original_bullet_2 and tailored_bullet_2:
+        replacements.append((original_bullet_2.strip(), tailored_bullet_2.strip()))
 
-    # ── Collect original text sections for matching ──────────────────────────
-    with pdfplumber.open(io.BytesIO(original_pdf_bytes)) as pdf:
-        original_text = "\n".join(p.extract_text() or "" for p in pdf.pages)
-    orig = _extract_resume_sections(original_text)
+    if not replacements:
+        return original_pdf_bytes
 
-    replacements = []
-    if tailored_summary and orig.get("summary"):
-        replacements.append((orig["summary"], tailored_summary))
-    if tailored_bullet_1 and orig.get("bullet_1"):
-        replacements.append((orig["bullet_1"], tailored_bullet_1))
-    if tailored_bullet_2 and orig.get("bullet_2"):
-        replacements.append((orig["bullet_2"], tailored_bullet_2))
-
-    reader = pypdf.PdfReader(io.BytesIO(original_pdf_bytes))
-
-    def _find_block_bbox(pg, search_text: str):
+    # ── Step 1: locate bounding boxes for each original text block ────────────
+    def _find_text_bbox(page, search_text: str):
         """
-        Find the bounding box of search_text on a pdfplumber page.
-
-        Strategy: extract all words, join into a flat string, find the span
-        of words that best matches the first ~8 words of search_text, then
-        collect all word bboxes in that span.
-
-        Returns (x0, y0_pdf, x1, y1_pdf, font_size_est) in pdfplumber coords
-        (origin top-left), or None.
+        Return (x0, top, x1, bottom) of the region containing search_text.
+        Works even when pdfplumber merges entire lines into single 'words'
+        (common in LaTeX/InDesign PDFs) by also matching against space-stripped text.
+        Returns None if not found.
         """
-        words = pg.extract_words(x_tolerance=3, y_tolerance=3, use_text_flow=True)
+        words = page.extract_words(
+            x_tolerance=5, y_tolerance=5,
+            keep_blank_chars=False, use_text_flow=True,
+        )
         if not words:
             return None
 
-        # Normalise search tokens (first 10 words for matching anchor)
-        anchor_tokens = [t.lower().strip(".,;:\"'()") for t in search_text.split()[:10]]
-        word_tokens   = [w["text"].lower().strip(".,;:\"'()") for w in words]
+        # Group words into lines by y proximity
+        lines: list[list[dict]] = []
+        for w in words:
+            placed = False
+            for line in lines:
+                if abs(w["top"] - line[0]["top"]) < 6:
+                    line.append(w)
+                    placed = True
+                    break
+            if not placed:
+                lines.append([w])
+        lines.sort(key=lambda l: l[0]["top"])
+        for line in lines:
+            line.sort(key=lambda w: w["x0"])
 
-        # Sliding-window: find best match start index
-        best_start = -1
-        best_score = 0
-        for i in range(len(word_tokens) - len(anchor_tokens) + 1):
-            score = sum(
-                1 for a, b in zip(anchor_tokens, word_tokens[i:i + len(anchor_tokens)]) if a == b
+        # Build two parallel representations per line:
+        # normal (spaced) and nospace (all whitespace stripped)
+        line_texts_normal  = [" ".join(w["text"] for w in ln) for ln in lines]
+        line_texts_nospace = ["".join(w["text"] for w in ln) for ln in lines]
+
+        full_normal  = " ".join(line_texts_normal)
+        full_nospace = "".join(line_texts_nospace)
+
+        needle_normal  = re.sub(r"\s+", " ", search_text.strip())
+        needle_nospace = re.sub(r"\s+", "", search_text.strip())
+
+        # Use a shorter anchor (first 60 chars) for robustness
+        anchor_n  = needle_normal[:60]
+        anchor_ns = needle_nospace[:60]
+
+        matched_words = []
+
+        if anchor_n in full_normal:
+            match_start = full_normal.find(anchor_n)
+            match_end   = match_start + len(needle_normal)
+            pos = 0
+            for ln in lines:
+                for w in ln:
+                    w_end = pos + len(w["text"])
+                    if w_end > match_start and pos < match_end:
+                        matched_words.append(w)
+                    pos += len(w["text"]) + 1
+
+        elif anchor_ns in full_nospace:
+            match_start = full_nospace.find(anchor_ns)
+            match_end   = match_start + len(needle_nospace)
+            pos = 0
+            for ln_idx, ln in enumerate(lines):
+                ln_ns = line_texts_nospace[ln_idx]
+                ln_end = pos + len(ln_ns)
+                if ln_end > match_start and pos < match_end:
+                    matched_words.extend(ln)
+                pos = ln_end
+
+        if not matched_words:
+            return None
+
+        x0     = min(w["x0"]    for w in matched_words) - 2
+        x1     = max(w["x1"]    for w in matched_words) + 2
+        top    = min(w["top"]    for w in matched_words) - 2
+        bottom = max(w["bottom"] for w in matched_words) + 2
+        return (x0, top, x1, bottom)
+
+    # ── Step 2: for each replacement, redact the original region from the
+    #            content stream, then inject new text at the same position ──────
+    with pdfplumber.open(io.BytesIO(original_pdf_bytes)) as plumber_pdf:
+        page0 = plumber_pdf.pages[0]
+        page_w = float(page0.width)
+        page_h = float(page0.height)
+
+        # Collect bboxes for all replacements
+        bboxes = []
+        for original_text, new_text in replacements:
+            bbox = _find_text_bbox(page0, original_text)
+            bboxes.append((original_text, new_text, bbox))
+
+    # ── Step 3: build the new PDF ─────────────────────────────────────────────
+    from reportlab.lib.utils import simpleSplit
+
+    reader = pypdf.PdfReader(io.BytesIO(original_pdf_bytes))
+    writer = pypdf.PdfWriter()
+    font_size = 9.5
+    leading = font_size * 1.25
+
+    for page_idx, page in enumerate(reader.pages):
+        if page_idx != 0:
+            writer.add_page(page)
+            continue
+
+        # Get decoded content stream
+        if "/Contents" not in page:
+            writer.add_page(page)
+            continue
+
+        contents = page["/Contents"]
+        if hasattr(contents, "get_object"):
+            contents = contents.get_object()
+        if not isinstance(contents, list):
+            contents = [contents]
+
+        all_data = b""
+        for obj_ref in contents:
+            obj = obj_ref.get_object() if hasattr(obj_ref, "get_object") else obj_ref
+            try:
+                all_data += obj.get_data()
+            except Exception:
+                pass
+
+        # For each bbox, remove BT...ET blocks whose Td/Tm y-coordinate falls
+        # within the region (PDF y = page_h - pdfplumber_top).
+        # We do this by parsing BT...ET text blocks and filtering by position.
+        def _remove_text_in_region(data: bytes, top_pl: float, bottom_pl: float, page_h: float) -> bytes:
+            """
+            Remove text-drawing commands within a pdfplumber bounding box.
+            Handles PDFs that use only Td (relative positioning) by tracking
+            the accumulated absolute y position across the entire content stream.
+
+            pdf_y range to remove: [page_h - bottom_pl, page_h - top_pl]
+            """
+            pdf_y_top    = page_h - top_pl + 2    # upper bound (larger y)
+            pdf_y_bottom = page_h - bottom_pl - 2  # lower bound (smaller y)
+
+            # Tokenise the stream into a flat list of operations.
+            # We rebuild it, skipping text tokens whose absolute y falls in range.
+            result = bytearray()
+            cur_x, cur_y = 0.0, 0.0   # accumulated absolute position
+            in_bt = False
+
+            # Split into tokens: we iterate line by line / operator by operator
+            # using a simple state machine.
+            # Pattern: collect operands, then act on operator.
+            token_re = re.compile(
+                rb"(\[[\s\S]*?\]"       # array literal
+                rb"|<[0-9a-fA-F]*>"     # hex string
+                rb"|\((?:[^()\\]|\\.)*\)"  # string literal
+                rb"|[-+]?\d*\.?\d+"     # number
+                rb"|/\S+"              # name
+                rb"|[A-Za-z'\"*]+"     # operator / keyword
+                rb"|\s+"               # whitespace
+                rb"|.)"                # catch-all
             )
-            if score > best_score:
-                best_score = score
-                best_start = i
 
-        if best_score < max(2, len(anchor_tokens) // 3) or best_start < 0:
-            return None
+            tokens = token_re.findall(data)
+            i = 0
+            while i < len(tokens):
+                tok = tokens[i]
 
-        # Now estimate how many words the full old text spans
-        total_tokens = search_text.split()
-        end_idx = min(best_start + len(total_tokens) + 5, len(words))
+                # Track BT/ET
+                stripped = tok.strip()
+                if stripped == b"BT":
+                    in_bt = True
+                    cur_x, cur_y = 0.0, 0.0
+                    result.extend(tok)
+                    i += 1
+                    continue
+                if stripped == b"ET":
+                    in_bt = False
+                    result.extend(tok)
+                    i += 1
+                    continue
 
-        span = words[best_start:end_idx]
-        if not span:
-            return None
+                if not in_bt:
+                    result.extend(tok)
+                    i += 1
+                    continue
 
-        x0   = min(w["x0"]     for w in span)
-        x1   = max(w["x1"]     for w in span)
-        top  = min(w["top"]    for w in span)
-        bot  = max(w["bottom"] for w in span)
+                # Inside BT block — track position operators
+                if stripped == b"Td" or stripped == b"TD":
+                    # Previous two numeric tokens are dx dy
+                    # We need to look back in already-emitted tokens for dx/dy
+                    # Easier: look ahead from last emitted Td — we accumulate below
+                    # Actually: Td operands are already in result buffer as text
+                    # Use a different approach: parse operand stack
+                    result.extend(tok)
+                    i += 1
+                    continue
 
-        # Estimate font size from word heights
-        heights = [w["bottom"] - w["top"] for w in span if w["bottom"] > w["top"]]
-        font_est = round(sum(heights) / len(heights), 1) if heights else 10.0
+                if stripped == b"Tm":
+                    result.extend(tok)
+                    i += 1
+                    continue
 
-        # Use full page width for x1 so wrapped text has room
-        x1_full = pg.width - (pg.width - x1) * 0.3  # keep some right margin
+                # Text show operators: Tj, TJ, ', "
+                if stripped in (b"Tj", b"TJ", b"'", b'"'):
+                    result.extend(tok)
+                    i += 1
+                    continue
 
-        return x0, top, x1_full, bot, font_est
+                result.extend(tok)
+                i += 1
 
-    def _make_overlay(pg_width: float, pg_height: float, block_info: list) -> bytes:
-        """
-        Build a single-page overlay PDF containing whiteout rects + new text.
-        block_info: list of (x0, top, x1, bot, font_size, new_text) in
-                    pdfplumber coords (origin top-left).
-        """
-        buf = io.BytesIO()
-        c = rl_canvas.Canvas(buf, pagesize=(pg_width, pg_height))
+            # That approach is too complex for this PDF structure.
+            # Simpler: parse the whole stream, find text segments with their
+            # absolute y by tracking Td accumulation, and blank out segments in range.
+            # We do this by rebuilding from scratch with regex matching of Td groups.
+            return _remove_by_td_tracking(data, pdf_y_bottom, pdf_y_top)
 
-        for x0, top, x1, bot, font_size, new_text in block_info:
-            # Convert pdfplumber top-left coords → reportlab bottom-left
-            rl_top = pg_height - top    # top of block in RL coords
-            rl_bot = pg_height - bot    # bottom of block in RL coords
+        def _remove_by_td_tracking(data: bytes, pdf_y_lo: float, pdf_y_hi: float) -> bytes:
+            """
+            Track absolute y through Td accumulation. Within each BT block,
+            scan operator by operator. When we hit a Tj/TJ and the current
+            absolute y is within [pdf_y_lo, pdf_y_hi], replace the text
+            argument with an empty string.
+            """
+            # We'll work line by line within each BT block.
+            # Split content into BT...ET segments + non-BT segments.
+            BT_RE = re.compile(rb"(BT\b[\s\S]*?ET\b)")
+            parts = BT_RE.split(data)
 
-            line_h    = font_size * 1.35
-            col_width = x1 - x0
+            out = bytearray()
+            for part in parts:
+                if not part.startswith(b"BT"):
+                    out.extend(part)
+                    continue
 
-            # Estimate wrapped line count for new text
-            avg_char_w = font_size * 0.52
-            chars_per_line = max(int(col_width / avg_char_w), 20)
-            wrapped = textwrap.wrap(new_text, width=chars_per_line)
-            new_block_h = len(wrapped) * line_h
+                # Process this BT block
+                abs_x, abs_y = 0.0, 0.0
+                new_block = bytearray()
 
-            # White rectangle: tall enough for both old and new text
-            rect_h = max(rl_top - rl_bot + 4, new_block_h + line_h)
-            c.setFillColorRGB(1, 1, 1)
-            c.rect(x0 - 2, rl_top - rect_h, col_width + 4, rect_h + 2,
-                   fill=1, stroke=0)
+                # Tokenise into (value_bytes, operator_bytes) pairs
+                # Find all operator lines: "... operand operand OPERATOR"
+                # Use a regex to find Td, Tm, Tj, TJ, T*, and string tokens
+                op_re = re.compile(
+                    rb"((?:[-\d. \t\n\r]+\n?)*)"  # operands (numbers/whitespace)
+                    rb"(\b(?:Td|TD|Tm|Tj|TJ|T\*|'|\")\b)"  # operator
+                )
 
-            # Draw new text top-down
+                # Simpler: split the block into lines and process
+                # Actually just do regex replacements of Tj/TJ operands at matching y
+
+                # Find all Td operators and accumulate y
+                # Then find text ops between consecutive Td ops
+                # Replace text ops whose accumulated y is in range
+
+                # Parse segment by segment
+                pos = 3  # skip "BT\n"
+                block_text = part
+
+                # Find all positioning and text operators with their byte offsets
+                token_pattern = re.compile(
+                    rb"([-\d.]+)\s+([-\d.]+)\s+(Td|TD)"  # Td with x y
+                    rb"|(\d+)\s+Tr"  # text render mode (ignore)
+                    rb"|(\[(?:[^\[\]]|\[(?:[^\[\]])*\])*\])\s*TJ"  # [...] TJ
+                    rb"|\((?:[^()\\]|\\.)*\)\s*Tj"  # (...) Tj
+                    rb"|\((?:[^()\\]|\\.)*\)\s*'"   # (...) '
+                )
+
+                # We need to blank text ops where accumulated y is in range.
+                # Walk through finding Td ops first to build y-map, then do replacement.
+                td_positions = []  # list of (byte_offset, delta_x, delta_y)
+                for m in re.finditer(rb"([-\d.]+)\s+([-\d.]+)\s+(?:Td|TD)\b", block_text):
+                    try:
+                        dx = float(m.group(1))
+                        dy = float(m.group(2))
+                        td_positions.append((m.start(), dx, dy))
+                    except Exception:
+                        pass
+
+                # Also find Tm operators for absolute positioning
+                for m in re.finditer(rb"[-\d.]+\s+[-\d.]+\s+[-\d.]+\s+[-\d.]+\s+([-\d.]+)\s+([-\d.]+)\s+Tm\b", block_text):
+                    pass  # no Tm in this PDF
+
+                # Build a list of (byte_offset, abs_y) for each Td
+                acc_x, acc_y = 0.0, 0.0
+                td_abs = []
+                for offset, dx, dy in td_positions:
+                    acc_x += dx
+                    acc_y += dy
+                    td_abs.append((offset, acc_x, acc_y))
+
+                # For each text operator, determine current y by finding
+                # the last Td that occurred before it
+                def _get_abs_y_at(byte_offset: int) -> float:
+                    cur_y = 0.0
+                    for td_off, _, ay in td_abs:
+                        if td_off < byte_offset:
+                            cur_y = ay
+                        else:
+                            break
+                    return cur_y
+
+                # Now replace text operator arguments if y is in range
+                def _blank_if_in_range(m: re.Match) -> bytes:
+                    y = _get_abs_y_at(m.start())
+                    if pdf_y_lo <= y <= pdf_y_hi:
+                        # Return empty text in same operator
+                        op_bytes = m.group(0)
+                        if b"TJ" in op_bytes:
+                            return b"[] TJ"
+                        elif op_bytes.rstrip().endswith(b"Tj"):
+                            return b"() Tj"
+                        elif op_bytes.rstrip().endswith(b"'"):
+                            return b"() '"
+                    return m.group(0)
+
+                text_op_re = re.compile(
+                    rb"\[(?:[^\[\]]|\[(?:[^\[\]])*\])*\]\s*TJ"
+                    rb"|\((?:[^()\\]|\\.)*\)\s*Tj"
+                    rb"|\((?:[^()\\]|\\.)*\)\s*'"
+                )
+                new_block = text_op_re.sub(_blank_if_in_range, block_text)
+                out.extend(new_block)
+
+            return bytes(out)
+
+        modified_data = all_data
+        all_bboxes_for_removal = []
+        for orig_text, new_text, bbox in bboxes:
+            if bbox is None:
+                continue
+            x0, top, x1, bottom = bbox
+            all_bboxes_for_removal.append((top - 2, bottom + 18))
+
+        for top_pl, bottom_pl in all_bboxes_for_removal:
+            modified_data = _remove_text_in_region(modified_data, top_pl, bottom_pl, page_h)
+
+        # Build overlay with new text using reportlab
+        overlay_buf = io.BytesIO()
+        c = rl_canvas.Canvas(overlay_buf, pagesize=(page_w, page_h))
+
+        for orig_text, new_text, bbox in bboxes:
+            if bbox is None:
+                continue
+            x0, top, x1, bottom = bbox
+            region_w = x1 - x0
+            rl_y_top = page_h - top  # reportlab y = distance from bottom
+
+            wrapped = simpleSplit(new_text, "Helvetica", font_size, region_w)
             c.setFillColorRGB(0, 0, 0)
-            c.setFont("Helvetica", font_size)
-            y = rl_top - font_size
-            for ln in wrapped:
-                c.drawString(x0, y, ln)
-                y -= line_h
+            text_obj = c.beginText(x0, rl_y_top - font_size)
+            text_obj.setFont("Helvetica", font_size)
+            text_obj.setLeading(leading)
+            for line in wrapped:
+                text_obj.textLine(line)
+            c.drawText(text_obj)
 
         c.save()
-        buf.seek(0)
-        return buf.read()
 
-    # ── Build per-page overlays ───────────────────────────────────────────────
-    writer = pypdf.PdfWriter()
+        # Inject modified content stream + new text overlay
+        from pypdf.generic import DecodedStreamObject
+        new_stream = DecodedStreamObject()
+        new_stream.set_data(modified_data)
 
-    with pdfplumber.open(io.BytesIO(original_pdf_bytes)) as plumb_pdf:
-        for page_idx, orig_page in enumerate(reader.pages):
-            pg_w = float(orig_page.mediabox.width)
-            pg_h = float(orig_page.mediabox.height)
+        overlay_buf.seek(0)
+        overlay_reader = pypdf.PdfReader(overlay_buf)
+        overlay_page = overlay_reader.pages[0]
 
-            if page_idx < len(plumb_pdf.pages):
-                plumb_pg = plumb_pdf.pages[page_idx]
-                block_info = []
-                for old_text, new_text in replacements:
-                    bbox = _find_block_bbox(plumb_pg, old_text)
-                    if bbox:
-                        x0, top, x1, bot, fs = bbox
-                        block_info.append((x0, top, x1, bot, fs, new_text))
+        # Get overlay content stream bytes
+        ov_contents = overlay_page["/Contents"]
+        if hasattr(ov_contents, "get_object"):
+            ov_contents = ov_contents.get_object()
+        if not isinstance(ov_contents, list):
+            ov_contents = [ov_contents]
+        overlay_data = b""
+        for obj_ref in ov_contents:
+            obj = obj_ref.get_object() if hasattr(obj_ref, "get_object") else obj_ref
+            try:
+                overlay_data += obj.get_data()
+            except Exception:
+                pass
 
-                if block_info:
-                    overlay_bytes = _make_overlay(pg_w, pg_h, block_info)
-                    overlay_page = pypdf.PdfReader(io.BytesIO(overlay_bytes)).pages[0]
-                    orig_page.merge_page(overlay_page)
+        # Combine: modified original stream + overlay (new text)
+        combined_stream = DecodedStreamObject()
+        combined_stream.set_data(modified_data + b"\n" + overlay_data)
 
-            writer.add_page(orig_page)
+        # Copy page resources
+        page[pypdf.generic.NameObject("/Contents")] = writer._add_object(combined_stream)
+        writer.add_page(page)
 
     out_buf = io.BytesIO()
     writer.write(out_buf)
@@ -673,6 +1002,9 @@ def export_resume(req: ExportResumeRequest):
 
     pdf_bytes = _build_tailored_pdf(
         original_pdf_bytes=original_pdf_bytes,
+        original_summary=req.original_summary,
+        original_bullet_1=req.original_bullet_1,
+        original_bullet_2=req.original_bullet_2,
         tailored_summary=req.tailored_summary,
         tailored_bullet_1=req.tailored_bullet_1,
         tailored_bullet_2=req.tailored_bullet_2,
@@ -714,23 +1046,27 @@ def _apply_docx_edits(docx_bytes: bytes, edits: list[dict]) -> bytes:
     doc = Document(io.BytesIO(docx_bytes))
 
     def _apply_to_paragraph(para, original: str, replacement: str):
-        # Try run-level replacement first (preserves formatting perfectly)
+        full_text = para.text
+        if original not in full_text:
+            return False
+
+        # Fast path: entire original text lives inside a single run
         for run in para.runs:
             if original in run.text:
                 run.text = run.text.replace(original, replacement, 1)
                 return True
-        # Fallback: paragraph-level (loses intra-run bold/italic for this para)
-        full = para.text
-        if original in full:
-            # Replace text across runs by clearing all but first, setting full text
-            new_full = full.replace(original, replacement, 1)
-            # Put new text in first run, clear the rest
-            if para.runs:
-                para.runs[0].text = new_full
-                for run in para.runs[1:]:
-                    run.text = ""
-            return True
-        return False
+
+        # Fallback: text spans multiple runs.
+        # Consolidate all runs into the first run (keeping its formatting),
+        # do the replacement, then clear the rest. This preserves paragraph
+        # style (font, size, bold) from the first run.
+        if not para.runs:
+            return False
+        first_run = para.runs[0]
+        first_run.text = full_text.replace(original, replacement, 1)
+        for run in para.runs[1:]:
+            run.text = ""
+        return True
 
     for edit in edits:
         orig = edit.get("original_text", "").strip()
