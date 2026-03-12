@@ -1576,7 +1576,7 @@
         <div class="score-row"><div class="score-lbl">Exp</div><div class="score-bg"><div class="score-fill" data-pct="${(((bd.experience_fit || 0) / 30) * 100).toFixed(0)}"></div></div><div class="score-num">${bd.experience_fit ?? "—"}</div></div>
         <div class="score-row"><div class="score-lbl">Loc</div><div class="score-bg"><div class="score-fill" data-pct="${(((bd.location_match || 0) / 20) * 100).toFixed(0)}"></div></div><div class="score-num">${bd.location_match ?? "—"}</div></div>
         <div class="score-total">${job.score}/100</div>
-        ${job.url && job.url.startsWith("http") ? `<a class="job-link" href="${esc(job.url)}" target="_blank" rel="noopener">↗ View on LinkedIn</a>` : ""}
+        <a class="job-link" href="${job.url && job.url.startsWith("http") ? esc(job.url) : `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(job.job_title + " " + job.company)}`}" target="_blank" rel="noopener">↗ View on LinkedIn</a>
       `;
           c.appendChild(card);
         });
