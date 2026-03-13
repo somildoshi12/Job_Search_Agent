@@ -259,7 +259,11 @@ pytest tests/test_agent.py -v
 
 | Member | Contributions |
 | ------ | ------------- |
-| Somil Doshi | Full project implementation — agent architecture, ReAct loop (`main.py`), all three tools (filter, rank, tailor), FastAPI backend (`api_server.py`), web UI (`index.html`), dataset collection with real LinkedIn URLs, pytest test suite, architecture diagram, README, and technical report |
+| Parva Shah | Agent architecture design, system prompt engineering, ReAct loop design and state machine logic (`main.py`) |
+| Somil Doshi | Tool implementation — `filter_jobs`, `rank_jobs`, `tailor_resume`; dataset collection (30 real LinkedIn job postings); FastAPI backend (`api_server.py`) |
+| Nisarg Shah | Web UI development (`index.html`), SSE streaming integration, resume PDF/DOCX parsing and export endpoints |
+| Md Moshiur Rahman | Pytest test suite (`tests/test_agent.py`, 11 tests), code quality review, architecture diagram |
+| Smit Patel | Technical report (`report.docx`), README documentation, filtering & ranking logic analysis, ethics reflection |
 
 ---
 
