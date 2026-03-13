@@ -1347,8 +1347,16 @@
             document.getElementById("f-b1").value = data.bullet_1;
           if (data.bullet_2 && !document.getElementById("f-b2").value)
             document.getElementById("f-b2").value = data.bullet_2;
+          // Auto-populate skills from resume (replace existing tags)
+          if (data.skills && data.skills.length > 0) {
+            skillTags.length = 0;
+            data.skills.forEach(s => skillTags.push(s));
+            renderTags("skills-wrap", "skill-input", skillTags, () =>
+              renderTags("skills-wrap", "skill-input", skillTags)
+            );
+          }
           status.style.color = "var(--success)";
-          status.textContent = `✓ Extracted ${data.pages} page(s) — fields auto-filled below`;
+          status.textContent = `✓ Extracted ${data.pages} page(s) — ${data.skills?.length || 0} skills detected, fields auto-filled`;
         } catch (err) {
           status.style.color = "var(--error)";
           status.textContent = "✗ Parse failed — fill fields manually";

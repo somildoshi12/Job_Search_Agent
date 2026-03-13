@@ -347,6 +347,57 @@ def _extract_text_from_pdf(content: bytes) -> tuple[str, int]:
         raise HTTPException(status_code=500, detail="Install pdfplumber: pip install pdfplumber")
 
 
+# Comprehensive skill keyword list covering most data/ML/software job postings
+_KNOWN_SKILLS = [
+    # Languages
+    "Python", "R", "SQL", "Java", "Scala", "C++", "C#", "JavaScript", "TypeScript",
+    "Go", "Rust", "Julia", "MATLAB", "Bash", "Shell",
+    # ML / AI
+    "Machine Learning", "Deep Learning", "NLP", "Computer Vision", "Reinforcement Learning",
+    "Transformers", "LLMs", "Large Language Models", "LLM", "Generative AI", "Gen AI",
+    "Neural Networks", "Feature Engineering", "Model Deployment", "MLOps",
+    # Frameworks / Libraries
+    "PyTorch", "TensorFlow", "Keras", "Scikit-learn", "XGBoost", "LightGBM", "CatBoost",
+    "Hugging Face", "spaCy", "NLTK", "OpenCV", "Pandas", "NumPy", "SciPy", "Matplotlib",
+    "Seaborn", "Plotly", "FastAPI", "Flask", "Django", "LangChain", "LlamaIndex",
+    # Data Engineering
+    "Airflow", "dbt", "Spark", "PySpark", "Kafka", "Flink", "Hadoop", "Hive",
+    "ETL", "ELT", "Data Pipelines", "Data Warehouse", "Data Lake", "Databricks",
+    "Snowflake", "dbt", "Fivetran", "Stitch",
+    # Databases
+    "PostgreSQL", "MySQL", "MongoDB", "Redis", "Elasticsearch", "Cassandra",
+    "DynamoDB", "BigQuery", "Redshift", "SQLite", "Oracle", "Neo4j",
+    # Cloud / DevOps
+    "AWS", "GCP", "Azure", "Docker", "Kubernetes", "Terraform", "CI/CD",
+    "MLflow", "Weights & Biases", "W&B", "SageMaker", "Vertex AI", "Azure ML",
+    "Git", "GitHub", "GitLab", "Jenkins", "Prometheus", "Grafana",
+    # BI / Viz
+    "Power BI", "Tableau", "Looker", "Metabase", "Excel",
+    # Stats / Math
+    "Statistics", "Linear Algebra", "Probability", "A/B Testing", "Bayesian",
+    "Algorithms", "Data Structures", "Distributed Systems",
+]
+
+def _extract_skills_from_text(text: str) -> list[str]:
+    """
+    Match known skill keywords against raw resume text (case-insensitive).
+    Returns deduplicated list preserving canonical capitalisation.
+    """
+    text_lower = text.lower()
+    found = []
+    seen_lower = set()
+    for skill in _KNOWN_SKILLS:
+        skill_lower = skill.lower()
+        if skill_lower in seen_lower:
+            continue
+        # Match as whole word / token (allow hyphen boundaries too)
+        pattern = r'(?<![a-zA-Z0-9])' + re.escape(skill_lower) + r'(?![a-zA-Z0-9])'
+        if re.search(pattern, text_lower):
+            found.append(skill)
+            seen_lower.add(skill_lower)
+    return found
+
+
 def _extract_resume_sections(text: str) -> dict:
     """
     Extract professional summary and two achievement bullets from resume text.
@@ -496,6 +547,7 @@ def _extract_resume_sections(text: str) -> dict:
         "bullet_1": final_bullets[0] if len(final_bullets) > 0 else "",
         "bullet_2": final_bullets[1] if len(final_bullets) > 1 else "",
         "full_text": text,
+        "skills": _extract_skills_from_text(text),
     }
 
 

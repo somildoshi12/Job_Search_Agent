@@ -776,7 +776,7 @@ if __name__ == "__main__":
 
     # ── CANDIDATE PROFILE — modify this section ──────────────────────────────
     CANDIDATE_PROFILE = {
-        "name": "Somil",
+        "name": "Alex",
         "skills": [
             "Python", "SQL", "R", "Machine Learning", "Deep Learning",
             "PyTorch", "TensorFlow", "NLP", "Transformers",
