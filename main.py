@@ -36,7 +36,7 @@ except ImportError:
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
 MODEL_NAME = "qwen3.5:4b"
-DATASET_PATH = "jobs_dataset.csv"
+DATASET_PATH = "jobs_dataset_with_real_urls.csv"
 MAX_AGENT_ITERATIONS = 6   # Safety cap on the ReAct loop
 OLLAMA_TIMEOUT = 120       # Default timeout; overridden per-call for heavy tools
 
