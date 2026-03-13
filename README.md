@@ -1,5 +1,7 @@
 # AI Job Search Agent
 
+**Team 19** | AI for Engineers — Assignment 2
+
 An autonomous AI agent that filters, ranks, and tailors your resume for the best-matching job — powered by a local LLM (Qwen 3.5 4B via Ollama). No data leaves your machine.
 
 ---
@@ -29,7 +31,7 @@ Qwen 3.5 4B     ──▶  filter_jobs  ──▶  rank_jobs  ──▶  tailor_
 | `api_server.py`       | FastAPI backend with SSE streaming             |
 | `index.html`          | Self-contained interactive UI (no build step)  |
 | `tests/test_agent.py` | 11 pytest unit tests                           |
-| `jobs_dataset.csv`    | 40 AI/ML job postings                          |
+| `jobs_dataset_with_real_urls.csv` | 30 real AI/ML job postings with LinkedIn URLs |
 | `report.docx`         | Technical report for the assignment            |
 
 ---
@@ -215,16 +217,16 @@ curl -N -X POST http://localhost:8000/run-agent \
 
 ```
 Job_Search_Agent/
-├── main.py                    # CLI agent (ReAct loop + 3 tools)
-├── api_server.py              # FastAPI backend (SSE streaming)
-├── index.html                 # Self-contained web UI (no build step)
-├── jobs_dataset.csv           # 40 AI/ML job postings
+├── main.py                            # CLI agent (ReAct loop + 3 tools)
+├── api_server.py                      # FastAPI backend (SSE streaming)
+├── index.html                         # Self-contained web UI (no build step)
+├── jobs_dataset_with_real_urls.csv    # 30 real AI/ML job postings (LinkedIn URLs)
 ├── requirements.txt
 ├── README.md
-├── report.docx                # Technical report
-├── architecture_diagram.png   # Architecture diagram
+├── report.docx                        # Technical report (Team 19)
+├── architecture_diagram.png           # Architecture diagram
 ├── tests/
-│   └── test_agent.py          # 11 pytest tests
+│   └── test_agent.py                  # 11 pytest tests
 └── Assignment Requirement/
     └── ...
 ```
@@ -247,9 +249,17 @@ pytest tests/test_agent.py -v
 | `test_ranking_top_job_highest_score` | First job has highest score |
 | `test_ranking_skill_proportional` | 5/5 match beats 1/5 match |
 | `test_ranking_top3_count` | `top_3` has ≤ 3 items |
-| `test_dataset_integrity` | 40 rows, 7 columns, valid data |
+| `test_dataset_integrity` | 30 rows, 7 columns, valid data |
 | `test_state_machine_blocks_finish` | `finish` rejected when steps incomplete |
 | `test_state_machine_allows_finish_after_all_steps` | `finish` accepted after all 3 steps |
+
+---
+
+## Team 19 — Contributions
+
+| Member | Contributions |
+| ------ | ------------- |
+| Somil Doshi | Full project implementation — agent architecture, ReAct loop (`main.py`), all three tools (filter, rank, tailor), FastAPI backend (`api_server.py`), web UI (`index.html`), dataset collection with real LinkedIn URLs, pytest test suite, architecture diagram, README, and technical report |
 
 ---
 
